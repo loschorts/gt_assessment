@@ -1,4 +1,4 @@
-enum Status {
+enum OrderStatus {
   Pending = 'Pending',
   PaymentAuthorized = 'PaymentAuthorized',
   PaymentDeclined = 'PaymentDeclined',
@@ -7,4 +7,4 @@ enum Status {
   OrderComplete = 'OrderComplete',
 }
 
-export default Status
+export default OrderStatus

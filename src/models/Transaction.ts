@@ -1,11 +1,11 @@
 import { v4 as uuidv4 } from 'uuid'
-import Status from './Status'
+import OrderStatus from './OrderStatus'
 
 class Transaction {
   id: string
   orderId: string
   paymentId: string
-  status: Status | null
+  status: OrderStatus | null
   createdAt: Date
 
   constructor(orderId: string, paymentId: string) {

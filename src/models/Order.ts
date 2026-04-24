@@ -1,10 +1,10 @@
 import { v4 as uuidv4 } from 'uuid'
-import Status from './Status'
+import OrderStatus from './OrderStatus'
 import PaymentMethod from './PaymentMethod'
 import { PaymentDeclinedError, FulfillmentFailedError } from '../errors'
 
 export interface StatusHistoryEntry {
-  status: Status
+  status: OrderStatus
   createdAt: Date
 }
 
@@ -23,19 +23,19 @@ class Order {
     this.statusHistory = []
   }
 
-  logStatus(status: Status): void {
+  logStatus(status: OrderStatus): void {
     this.statusHistory.push({ status, createdAt: new Date() })
   }
 
   initialize(): void {
-    this.logStatus(Status.Pending)
+    this.logStatus(OrderStatus.Pending)
   }
 
   fulfill(): void {
     // Transfers tickets to client — calls ticketing service in production
   }
 
-  checkout(payment: PaymentMethod): Status {
+  checkout(payment: PaymentMethod): OrderStatus {
     if (this.processing) {
       throw new Error('Order is already being processed')
     }
@@ -44,35 +44,35 @@ class Order {
     try {
       try {
         payment.authorize()
-        this.logStatus(Status.PaymentAuthorized)
+        this.logStatus(OrderStatus.PaymentAuthorized)
         this.fulfill()
       } catch (e) {
         if (e instanceof PaymentDeclinedError) {
-          this.logStatus(Status.PaymentDeclined)
-          return Status.PaymentDeclined
+          this.logStatus(OrderStatus.PaymentDeclined)
+          return OrderStatus.PaymentDeclined
         }
         if (e instanceof FulfillmentFailedError) {
           try {
             payment.void()
-            this.logStatus(Status.FulfillmentFailed)
-            return Status.FulfillmentFailed
+            this.logStatus(OrderStatus.FulfillmentFailed)
+            return OrderStatus.FulfillmentFailed
           } catch {
-            this.logStatus(Status.NeedsAttention)
-            return Status.NeedsAttention
+            this.logStatus(OrderStatus.NeedsAttention)
+            return OrderStatus.NeedsAttention
           }
         }
         throw e
       }
 
-      this.logStatus(Status.OrderComplete)
-      return Status.OrderComplete
+      this.logStatus(OrderStatus.OrderComplete)
+      return OrderStatus.OrderComplete
     } finally {
       this.processing = false
     }
   }
 
-  getStatus(): Status {
-    return this.statusHistory.at(-1)?.status ?? Status.Pending
+  getStatus(): OrderStatus {
+    return this.statusHistory.at(-1)?.status ?? OrderStatus.Pending
   }
 }
 

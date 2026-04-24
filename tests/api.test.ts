@@ -3,7 +3,7 @@ import app from '../src/app'
 import * as db from '../src/db'
 import Order from '../src/models/Order'
 import PaymentMethod from '../src/models/PaymentMethod'
-import Status from '../src/models/Status'
+import OrderStatus from '../src/models/OrderStatus'
 import { PaymentDeclinedError, FulfillmentFailedError } from '../src/errors'
 
 beforeEach(() => {
@@ -25,7 +25,7 @@ describe('POST /orders', () => {
 
     expect(res.status).toBe(201)
     expect(res.body.orderId).toBeDefined()
-    expect(res.body.status).toBe(Status.Pending)
+    expect(res.body.status).toBe(OrderStatus.Pending)
   })
 
   test('invalid order — missing clientId → 400', async () => {
@@ -71,7 +71,7 @@ describe('POST /orders/:orderId/checkout — README validation test cases', () =
       .send({ paymentId: 'pay-123' })
 
     expect(res.status).toBe(200)
-    expect(res.body.status).toBe(Status.OrderComplete)
+    expect(res.body.status).toBe(OrderStatus.OrderComplete)
     expect(res.body.transactionId).toBeDefined()
   })
 
@@ -86,7 +86,7 @@ describe('POST /orders/:orderId/checkout — README validation test cases', () =
       .send({ paymentId: 'pay-123' })
 
     expect(res.status).toBe(422)
-    expect(res.body.status).toBe(Status.PaymentDeclined)
+    expect(res.body.status).toBe(OrderStatus.PaymentDeclined)
   })
 
   test('fulfillment fails, void succeeds → FulfillmentFailed', async () => {
@@ -100,7 +100,7 @@ describe('POST /orders/:orderId/checkout — README validation test cases', () =
       .send({ paymentId: 'pay-123' })
 
     expect(res.status).toBe(422)
-    expect(res.body.status).toBe(Status.FulfillmentFailed)
+    expect(res.body.status).toBe(OrderStatus.FulfillmentFailed)
   })
 
   test('fulfillment fails, void also fails → NeedsAttention', async () => {
@@ -117,7 +117,7 @@ describe('POST /orders/:orderId/checkout — README validation test cases', () =
       .send({ paymentId: 'pay-123' })
 
     expect(res.status).toBe(422)
-    expect(res.body.status).toBe(Status.NeedsAttention)
+    expect(res.body.status).toBe(OrderStatus.NeedsAttention)
   })
 
   test('unknown order → 404', async () => {
@@ -167,7 +167,7 @@ describe('GET /orders/:orderId/status', () => {
 
     expect(res.status).toBe(200)
     expect(res.body.orderId).toBe(orderId)
-    expect(res.body.status).toBe(Status.OrderComplete)
+    expect(res.body.status).toBe(OrderStatus.OrderComplete)
     expect(Array.isArray(res.body.history)).toBe(true)
     expect(res.body.history.length).toBeGreaterThan(0)
   })
@@ -180,7 +180,7 @@ describe('GET /orders/:orderId/status', () => {
     const res = await request(app).get(`/orders/${createRes.body.orderId}/status`)
 
     expect(res.status).toBe(200)
-    expect(res.body.status).toBe(Status.Pending)
+    expect(res.body.status).toBe(OrderStatus.Pending)
   })
 
   test('unknown order → 404', async () => {

@@ -1,6 +1,6 @@
 import Order from '../src/models/Order'
 import PaymentMethod from '../src/models/PaymentMethod'
-import Status from '../src/models/Status'
+import OrderStatus from '../src/models/OrderStatus'
 import { PaymentDeclinedError, FulfillmentFailedError } from '../src/errors'
 
 describe('Order', () => {
@@ -23,15 +23,15 @@ describe('Order', () => {
 
   describe('getStatus()', () => {
     test('returns Pending before any checkout', () => {
-      expect(order.getStatus()).toBe(Status.Pending)
+      expect(order.getStatus()).toBe(OrderStatus.Pending)
     })
   })
 
   describe('checkout() — README validation test cases', () => {
     test('payment authorized and fulfillment succeeds → OrderComplete', () => {
       const status = order.checkout(payment)
-      expect(status).toBe(Status.OrderComplete)
-      expect(order.getStatus()).toBe(Status.OrderComplete)
+      expect(status).toBe(OrderStatus.OrderComplete)
+      expect(order.getStatus()).toBe(OrderStatus.OrderComplete)
     })
 
     test('payment authorization fails → PaymentDeclined', () => {
@@ -39,8 +39,8 @@ describe('Order', () => {
 
       const status = order.checkout(payment)
 
-      expect(status).toBe(Status.PaymentDeclined)
-      expect(order.getStatus()).toBe(Status.PaymentDeclined)
+      expect(status).toBe(OrderStatus.PaymentDeclined)
+      expect(order.getStatus()).toBe(OrderStatus.PaymentDeclined)
     })
 
     test('fulfillment fails, void succeeds → FulfillmentFailed', () => {
@@ -48,8 +48,8 @@ describe('Order', () => {
 
       const status = order.checkout(payment)
 
-      expect(status).toBe(Status.FulfillmentFailed)
-      expect(order.getStatus()).toBe(Status.FulfillmentFailed)
+      expect(status).toBe(OrderStatus.FulfillmentFailed)
+      expect(order.getStatus()).toBe(OrderStatus.FulfillmentFailed)
     })
 
     test('fulfillment fails, void also fails → NeedsAttention', () => {
@@ -58,8 +58,8 @@ describe('Order', () => {
 
       const status = order.checkout(payment)
 
-      expect(status).toBe(Status.NeedsAttention)
-      expect(order.getStatus()).toBe(Status.NeedsAttention)
+      expect(status).toBe(OrderStatus.NeedsAttention)
+      expect(order.getStatus()).toBe(OrderStatus.NeedsAttention)
     })
   })
 
@@ -91,8 +91,8 @@ describe('Order', () => {
     test('records PaymentAuthorized before OrderComplete on success', () => {
       order.checkout(payment)
       const statuses = order.statusHistory.map(e => e.status)
-      expect(statuses).toContain(Status.PaymentAuthorized)
-      expect(statuses.at(-1)).toBe(Status.OrderComplete)
+      expect(statuses).toContain(OrderStatus.PaymentAuthorized)
+      expect(statuses.at(-1)).toBe(OrderStatus.OrderComplete)
     })
 
     test('does not record PaymentAuthorized when payment is declined', () => {
@@ -101,8 +101,8 @@ describe('Order', () => {
       order.checkout(payment)
 
       const statuses = order.statusHistory.map(e => e.status)
-      expect(statuses).not.toContain(Status.PaymentAuthorized)
-      expect(statuses).toContain(Status.PaymentDeclined)
+      expect(statuses).not.toContain(OrderStatus.PaymentAuthorized)
+      expect(statuses).toContain(OrderStatus.PaymentDeclined)
     })
 
     test('records PaymentAuthorized then FulfillmentFailed when void succeeds', () => {
@@ -111,8 +111,8 @@ describe('Order', () => {
       order.checkout(payment)
 
       const statuses = order.statusHistory.map(e => e.status)
-      expect(statuses).toContain(Status.PaymentAuthorized)
-      expect(statuses.at(-1)).toBe(Status.FulfillmentFailed)
+      expect(statuses).toContain(OrderStatus.PaymentAuthorized)
+      expect(statuses.at(-1)).toBe(OrderStatus.FulfillmentFailed)
     })
 
     test('each history entry has a createdAt timestamp', () => {

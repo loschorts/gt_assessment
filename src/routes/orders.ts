@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express'
 import Order from '../models/Order'
 import PaymentMethod from '../models/PaymentMethod'
 import Transaction from '../models/Transaction'
-import Status from '../models/Status'
+import OrderStatus from '../models/OrderStatus'
 import * as db from '../db'
 import { fireAlert } from '../alerts'
 
@@ -41,7 +41,7 @@ router.post('/:orderId/checkout', (req: Request, res: Response) => {
   }
 
   const currentStatus = order.getStatus()
-  if (currentStatus !== Status.Pending) {
+  if (currentStatus !== OrderStatus.Pending) {
     return res.status(409).json({ error: 'Order has already been processed', status: currentStatus })
   }
 
@@ -52,11 +52,11 @@ router.post('/:orderId/checkout', (req: Request, res: Response) => {
   transaction.status = status
   db.logTransaction(transaction)
 
-  if (status === Status.NeedsAttention) {
+  if (status === OrderStatus.NeedsAttention) {
     fireAlert(orderId)
   }
 
-  const httpStatus = status === Status.OrderComplete ? 200 : 422
+  const httpStatus = status === OrderStatus.OrderComplete ? 200 : 422
   return res.status(httpStatus).json({ status, transactionId: transaction.id })
 })
 
