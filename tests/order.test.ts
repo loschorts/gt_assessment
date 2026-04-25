@@ -63,30 +63,6 @@ describe('Order', () => {
     })
   })
 
-  describe('processing flag', () => {
-    test('is set during checkout and cleared after', async () => {
-      let flagDuringCheckout = false
-      fulfillSpy.mockImplementation(async () => { flagDuringCheckout = order.processing })
-
-      await order.checkout(payment)
-
-      expect(flagDuringCheckout).toBe(true)
-      expect(order.processing).toBe(false)
-    })
-
-    test('is cleared even when checkout throws unexpectedly', async () => {
-      fulfillSpy.mockRejectedValue(new Error('Unexpected'))
-
-      await expect(order.checkout(payment)).rejects.toThrow('Unexpected')
-      expect(order.processing).toBe(false)
-    })
-
-    test('throws if order is already processing', async () => {
-      order.processing = true
-      await expect(order.checkout(payment)).rejects.toThrow('Order is already being processed')
-    })
-  })
-
   describe('statusHistory', () => {
     test('records PaymentAuthorized before OrderComplete on success', async () => {
       await order.checkout(payment)

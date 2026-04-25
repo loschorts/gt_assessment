@@ -12,14 +12,12 @@ class Order {
   id: string
   clientId: string
   ticketIds: string[]
-  processing: boolean
   statusHistory: StatusHistoryEntry[]
 
   constructor(clientId: string, ticketIds: string[]) {
     this.id = uuidv4()
     this.clientId = clientId
     this.ticketIds = ticketIds
-    this.processing = false
     this.statusHistory = []
   }
 
@@ -36,40 +34,31 @@ class Order {
   }
 
   async checkout(payment: PaymentMethod): Promise<OrderStatus> {
-    if (this.processing) {
-      throw new Error('Order is already being processed')
-    }
-    this.processing = true
-
     try {
-      try {
-        await payment.authorize()
-        this.logStatus(OrderStatus.PaymentAuthorized)
-        await this.fulfill()
-      } catch (e) {
-        if (e instanceof PaymentDeclinedError) {
-          this.logStatus(OrderStatus.PaymentDeclined)
-          return OrderStatus.PaymentDeclined
-        }
-        if (e instanceof FulfillmentFailedError) {
-          try {
-            await payment.void()
-            this.logStatus(OrderStatus.FulfillmentFailed)
-            return OrderStatus.FulfillmentFailed
-          } catch (voidError) {
-            if (!(voidError instanceof PaymentUnvoidableError)) throw voidError
-            this.logStatus(OrderStatus.NeedsAttention)
-            return OrderStatus.NeedsAttention
-          }
-        }
-        throw e
+      await payment.authorize()
+      this.logStatus(OrderStatus.PaymentAuthorized)
+      await this.fulfill()
+    } catch (e) {
+      if (e instanceof PaymentDeclinedError) {
+        this.logStatus(OrderStatus.PaymentDeclined)
+        return OrderStatus.PaymentDeclined
       }
-
-      this.logStatus(OrderStatus.OrderComplete)
-      return OrderStatus.OrderComplete
-    } finally {
-      this.processing = false
+      if (e instanceof FulfillmentFailedError) {
+        try {
+          await payment.void()
+          this.logStatus(OrderStatus.FulfillmentFailed)
+          return OrderStatus.FulfillmentFailed
+        } catch (voidError) {
+          if (!(voidError instanceof PaymentUnvoidableError)) throw voidError
+          this.logStatus(OrderStatus.NeedsAttention)
+          return OrderStatus.NeedsAttention
+        }
+      }
+      throw e
     }
+
+    this.logStatus(OrderStatus.OrderComplete)
+    return OrderStatus.OrderComplete
   }
 
   getStatus(): OrderStatus {

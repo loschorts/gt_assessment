@@ -44,29 +44,30 @@ router.post('/:orderId/checkout', async (req: Request, res: Response) => {
 
   const { paymentId } = result.data
 
-  const order = db.getOrder(orderId)
-  if (!order) {
-    return res.status(404).json({ error: 'Order not found' })
+  const claim = db.claimCheckout(orderId)
+  if (!claim.ok) {
+    if (claim.reason === 'not_found') return res.status(404).json({ error: 'Order not found' })
+    return res.status(409).json({ error: 'Order has already been processed or is currently being processed' })
   }
 
-  const currentStatus = order.getStatus()
-  if (currentStatus !== OrderStatus.Pending) {
-    return res.status(409).json({ error: 'Order has already been processed', status: currentStatus })
-  }
-
+  const { order } = claim
   const payment = new PaymentMethod(order.clientId)
   const transaction = new Transaction(orderId, paymentId)
 
-  const status = await order.checkout(payment)
-  transaction.status = status
-  db.logTransaction(transaction)
+  try {
+    const status = await order.checkout(payment)
+    transaction.status = status
+    db.logTransaction(transaction)
 
-  if (status === OrderStatus.NeedsAttention) {
-    fireAlert(orderId)
+    if (status === OrderStatus.NeedsAttention) {
+      fireAlert(orderId)
+    }
+
+    const httpStatus = status === OrderStatus.OrderComplete ? 200 : 422
+    return res.status(httpStatus).json({ status, transactionId: transaction.id })
+  } finally {
+    db.releaseCheckout(orderId)
   }
-
-  const httpStatus = status === OrderStatus.OrderComplete ? 200 : 422
-  return res.status(httpStatus).json({ status, transactionId: transaction.id })
 })
 
 // GET /orders/:orderId/status — Get Order Status
