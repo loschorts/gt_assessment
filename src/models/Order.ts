@@ -31,11 +31,11 @@ class Order {
     this.logStatus(OrderStatus.Pending)
   }
 
-  fulfill(): void {
+  async fulfill(): Promise<void> {
     // Transfers tickets to client — calls ticketing service in production
   }
 
-  checkout(payment: PaymentMethod): OrderStatus {
+  async checkout(payment: PaymentMethod): Promise<OrderStatus> {
     if (this.processing) {
       throw new Error('Order is already being processed')
     }
@@ -43,9 +43,9 @@ class Order {
 
     try {
       try {
-        payment.authorize()
+        await payment.authorize()
         this.logStatus(OrderStatus.PaymentAuthorized)
-        this.fulfill()
+        await this.fulfill()
       } catch (e) {
         if (e instanceof PaymentDeclinedError) {
           this.logStatus(OrderStatus.PaymentDeclined)
@@ -53,7 +53,7 @@ class Order {
         }
         if (e instanceof FulfillmentFailedError) {
           try {
-            payment.void()
+            await payment.void()
             this.logStatus(OrderStatus.FulfillmentFailed)
             return OrderStatus.FulfillmentFailed
           } catch {

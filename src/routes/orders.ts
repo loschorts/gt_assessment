@@ -34,7 +34,7 @@ router.post('/', (req: Request, res: Response) => {
 })
 
 // POST /orders/:orderId/checkout — Execute Transaction
-router.post('/:orderId/checkout', (req: Request, res: Response) => {
+router.post('/:orderId/checkout', async (req: Request, res: Response) => {
   const { orderId } = req.params
 
   const result = CheckoutBody.safeParse(req.body)
@@ -57,7 +57,7 @@ router.post('/:orderId/checkout', (req: Request, res: Response) => {
   const payment = new PaymentMethod(order.clientId)
   const transaction = new Transaction(orderId, paymentId)
 
-  const status = order.checkout(payment)
+  const status = await order.checkout(payment)
   transaction.status = status
   db.logTransaction(transaction)
 

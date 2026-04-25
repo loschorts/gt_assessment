@@ -10,9 +10,9 @@ beforeEach(() => {
   db.clearAll()
   jest.restoreAllMocks()
   // Default: payment and fulfillment succeed
-  jest.spyOn(PaymentMethod.prototype, 'authorize').mockImplementation(() => {})
-  jest.spyOn(PaymentMethod.prototype, 'void').mockImplementation(() => {})
-  jest.spyOn(Order.prototype, 'fulfill').mockImplementation(() => {})
+  jest.spyOn(PaymentMethod.prototype, 'authorize').mockResolvedValue()
+  jest.spyOn(PaymentMethod.prototype, 'void').mockResolvedValue()
+  jest.spyOn(Order.prototype, 'fulfill').mockResolvedValue()
 })
 
 // ─── POST /orders ──────────────────────────────────────────────────────────────
@@ -76,9 +76,7 @@ describe('POST /orders/:orderId/checkout — README validation test cases', () =
   })
 
   test('payment authorization fails → PaymentDeclined', async () => {
-    jest.spyOn(PaymentMethod.prototype, 'authorize').mockImplementation(() => {
-      throw new PaymentDeclinedError()
-    })
+    jest.spyOn(PaymentMethod.prototype, 'authorize').mockRejectedValue(new PaymentDeclinedError())
     const orderId = await createOrder()
 
     const res = await request(app)
@@ -90,9 +88,7 @@ describe('POST /orders/:orderId/checkout — README validation test cases', () =
   })
 
   test('fulfillment fails, void succeeds → FulfillmentFailed', async () => {
-    jest.spyOn(Order.prototype, 'fulfill').mockImplementation(() => {
-      throw new FulfillmentFailedError()
-    })
+    jest.spyOn(Order.prototype, 'fulfill').mockRejectedValue(new FulfillmentFailedError())
     const orderId = await createOrder()
 
     const res = await request(app)
@@ -104,12 +100,8 @@ describe('POST /orders/:orderId/checkout — README validation test cases', () =
   })
 
   test('fulfillment fails, void also fails → NeedsAttention', async () => {
-    jest.spyOn(Order.prototype, 'fulfill').mockImplementation(() => {
-      throw new FulfillmentFailedError()
-    })
-    jest.spyOn(PaymentMethod.prototype, 'void').mockImplementation(() => {
-      throw new Error('Void failed')
-    })
+    jest.spyOn(Order.prototype, 'fulfill').mockRejectedValue(new FulfillmentFailedError())
+    jest.spyOn(PaymentMethod.prototype, 'void').mockRejectedValue(new Error('Void failed'))
     const orderId = await createOrder()
 
     const res = await request(app)

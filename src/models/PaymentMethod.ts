@@ -5,9 +5,9 @@ class PaymentMethod {
     this.clientId = clientId
   }
 
-  authorize(): void {}
+  async authorize(): Promise<void> {}
 
-  void(): void {}
+  async void(): Promise<void> {}
 }
 
 export default PaymentMethod
