@@ -287,15 +287,15 @@
       )
     }
 
-    function GetStatusForm({ selectedOrderId, checkoutCount, onSuccess, onError }) {
+    function GetStatusForm({ selectedOrderId, onSuccess, onError }) {
       const [orderId, setOrderId] = useState('')
       const [result, setResult] = useState(null)
 
-      async function fetchStatus(id, { notify = false } = {}) {
+      async function fetchStatus(id) {
         try {
           const res = await fetch(`/orders/${id}/status`)
           const body = await res.json()
-          if (notify) onSuccess({ status: res.status, body })
+          onSuccess({ status: res.status, body })
           if (res.ok) {
             const latest = body.history?.at(-1)
             setResult({ status: body.status, timestamp: latest?.createdAt ?? null })
@@ -303,7 +303,7 @@
             setResult(null)
           }
         } catch (err) {
-          if (notify) onError(String(err))
+          onError(String(err))
         }
       }
 
@@ -314,13 +314,9 @@
         }
       }, [selectedOrderId])
 
-      useEffect(() => {
-        if (checkoutCount > 0 && orderId) fetchStatus(orderId)
-      }, [checkoutCount])
-
       async function submit(e) {
         e.preventDefault()
-        fetchStatus(orderId, { notify: true })
+        fetchStatus(orderId)
       }
 
       return (
@@ -441,7 +437,6 @@
       const [dbState, setDbState] = useState({ orders: [], statusHistory: [] })
       const [lastResponse, setLastResponse] = useState(null)
       const [selectedOrderId, setSelectedOrderId] = useState(null)
-      const [checkoutCount, setCheckoutCount] = useState(0)
 
       const fetchState = useCallback(async () => {
         try {
@@ -462,10 +457,6 @@
         fetchState()
       }
 
-      function handleCheckoutSuccess(response) {
-        handleSuccess(response)
-        setCheckoutCount(c => c + 1)
-      }
 
       return (
         <>
@@ -481,8 +472,8 @@
           <div className="main">
             <div className="forms">
               <CreateOrderForm onSuccess={handleSuccess} onError={msg => setLastResponse({ status: 0, body: { error: msg } })} />
-              <CheckoutForm selectedOrderId={selectedOrderId} onSuccess={handleCheckoutSuccess} onError={msg => setLastResponse({ status: 0, body: { error: msg } })} />
-              <GetStatusForm selectedOrderId={selectedOrderId} checkoutCount={checkoutCount} onSuccess={handleSuccess} onError={msg => setLastResponse({ status: 0, body: { error: msg } })} />
+              <CheckoutForm selectedOrderId={selectedOrderId} onSuccess={handleSuccess} onError={msg => setLastResponse({ status: 0, body: { error: msg } })} />
+              <GetStatusForm selectedOrderId={selectedOrderId} onSuccess={handleSuccess} onError={msg => setLastResponse({ status: 0, body: { error: msg } })} />
             </div>
 
             <SimulationPanel />
