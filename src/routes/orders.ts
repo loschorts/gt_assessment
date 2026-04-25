@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express'
+import { z } from 'zod'
 import Order from '../models/Order'
 import PaymentMethod from '../models/PaymentMethod'
 import Transaction from '../models/Transaction'
@@ -8,18 +9,24 @@ import { fireAlert } from '../alerts'
 
 const router = Router()
 
+const CreateOrderBody = z.object({
+  clientId: z.string().min(1),
+  ticketIds: z.array(z.string()).min(1),
+})
+
+const CheckoutBody = z.object({
+  paymentId: z.string().min(1),
+})
+
 // POST /orders — Initialize Order
 router.post('/', (req: Request, res: Response) => {
-  const { clientId, ticketIds } = req.body
-
-  if (!clientId || typeof clientId !== 'string' || !clientId.trim()) {
-    return res.status(400).json({ error: 'clientId is required' })
-  }
-  if (!Array.isArray(ticketIds) || ticketIds.length === 0) {
-    return res.status(400).json({ error: 'ticketIds must be a non-empty array' })
+  const result = CreateOrderBody.safeParse(req.body)
+  if (!result.success) {
+    return res.status(400).json({ error: z.flattenError(result.error).fieldErrors })
   }
 
-  const order = new Order(clientId.trim(), ticketIds as string[])
+  const { clientId, ticketIds } = result.data
+  const order = new Order(clientId.trim(), ticketIds)
   order.initialize()
   db.createOrder(order)
 
@@ -29,15 +36,17 @@ router.post('/', (req: Request, res: Response) => {
 // POST /orders/:orderId/checkout — Execute Transaction
 router.post('/:orderId/checkout', (req: Request, res: Response) => {
   const { orderId } = req.params
-  const { paymentId } = req.body
+
+  const result = CheckoutBody.safeParse(req.body)
+  if (!result.success) {
+    return res.status(400).json({ error: z.flattenError(result.error).fieldErrors })
+  }
+
+  const { paymentId } = result.data
 
   const order = db.getOrder(orderId)
   if (!order) {
     return res.status(404).json({ error: 'Order not found' })
-  }
-
-  if (!paymentId || typeof paymentId !== 'string') {
-    return res.status(400).json({ error: 'paymentId is required' })
   }
 
   const currentStatus = order.getStatus()
