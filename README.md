@@ -162,6 +162,12 @@ Returns the current status and full status history for the given order.
 
 - **Serialized payment + completement processing:** Serializing payment authorization and order completion preserves transaction integrity at the cost of some latency. This tradeoff is justified because transaction integrity is a critical business concern, while the latency impact is minimal and has no effect on system integrity, trust, or complexity.
 
+- **Explicit transition table (`VALID_TRANSITIONS`):** Rather than encoding checkout eligibility as a single guard (`if status === Complete, reject`), valid transitions are declared as a data structure in `OrderStatus.ts`. `Order.tryCheckout()` consults the table rather than implementing ad-hoc logic. This makes the state machine auditable at a glance and keeps new states cheap to add — a new state only requires an entry in the table, not changes scattered across business logic. Some intermediate states that would justify this extensibility:
+  - **`FraudReview`** — order flagged by a risk model during authorization; checkout blocked pending a manual or automated clearance step before re-attempting payment.
+  - **`RateLimited`** — too many checkout attempts in a short window; blocks further attempts until a cooldown expires, protecting against both accidental duplicate submissions and intentional abuse.
+  - **`InventoryHold`** — tickets reserved but not yet confirmed available by the downstream ticketing service; checkout paused until the hold resolves or times out.
+  - **`AwaitingExternalConfirmation`** — payment authorized but completion is waiting on an async callback (e.g. a 3DS challenge or a slow downstream ACK); order held in limbo until confirmation arrives.
+
 ---
 
 ## Validation
