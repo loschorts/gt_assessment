@@ -51,42 +51,45 @@ A small service that models an order state machine with stage-dependent failure 
 
 `initialize(): void`
 ```
-LogStatus(Status::Initialized)
+LogStatus(OrderStatus::Initialized)
 ```
 
 ---
 
-`tryCheckout(payment: PaymentMethod) -> Status`
+`tryCheckout(payment: PaymentMethod, paymentId: string) -> OrderStatus`
 ```
+if !canTransition(currentStatus, OrderStatus::Complete):
+  throw InvalidTransitionError
+
 try:
   payment.authorize()
   this.tryComplete()
 
 catch (e):
   case PaymentDeclined:
-    LogStatus(Status::PaymentDeclined)
-    return Status::PaymentDeclined
+    LogStatus(OrderStatus::PaymentDeclined)
+    return OrderStatus::PaymentDeclined
 
   case CompletionFailed:
     try:
       payment.void()
-      LogStatus(Status::Cancelled)
-      return Status::Cancelled
+      LogStatus(OrderStatus::Cancelled)
+      return OrderStatus::Cancelled
     catch (e):
-      LogStatus(Status::NeedsAttention)
-      return Status::NeedsAttention
+      LogStatus(OrderStatus::NeedsAttention)
+      return OrderStatus::NeedsAttention
 
-always:
-  LogStatus(status)
-
-return Status::OrderComplete
+LogStatus(OrderStatus::Complete)
+return OrderStatus::Complete
 ```
 
 ---
 
-`getStatus(): Status`
+`getStatus(): OrderStatus`
 ```
-return getTransactions().latest()?.status ?? Status::Pending
+row = order_status_history.latest(orderId)
+if !row: throw OrderNotInitializedError
+return row.status
 ```
 
 ---
@@ -101,40 +104,27 @@ return getTransactions().latest()?.status ?? Status::Pending
 
 ---
 
-#### `Transaction`
-**Params**
-- `orderId: string`
-- `paymentId: string`
-
-**Props**
-- `status: Status`
-- `createdAt: timestamp`
-
----
-
-#### `Status` (Enum)
+#### `OrderStatus` (Enum)
 | Value | Description |
 |---|---|
-| `Pending` | Order initialized, not yet processed |
+| `Initialized` | Order created, not yet checked out |
 | `PaymentDeclined` | Payment authorization failed |
 | `Cancelled` | Completion failed; payment voided |
 | `NeedsAttention` | Completion failed and void also failed |
-| `OrderComplete` | Order successfully completeed |
+| `Complete` | Order successfully completed |
 
 ---
 
 ### API Actions
 
 #### `POST /orders` — Initialize Order
-Creates and validates a new order, logging initial `Pending` status.
+Creates and validates a new order, logging initial `Initialized` status.
 
-#### `POST /orders/:orderId/checkout` — Execute Transaction
+#### `POST /orders/:orderId/checkout` — Execute Checkout
 ```
-transaction = new Transaction(orderId, paymentId)
-status = order.tryCheckout(payment)
-LogTransaction(transaction, status)
+status = order.tryCheckout(payment, paymentId)
 
-if status === Status::NeedsAttention:
+if status === OrderStatus::NeedsAttention:
   fireAlert(orderId)
 ```
 
@@ -148,7 +138,7 @@ Returns the current status and full status history for the given order.
 ## Assumptions
 
 - **Inventory management is out of scope.** The service assumes tickets are available and allocatable. Availability checks, seat reservation, and inventory locking against concurrent buyers are not modeled.
-- **Completion is hand-waved.** `Order.complete()` is a stub representing a call to a downstream ticketing service. The mechanics of ticket transfer (API calls, retries, idempotency keys) are outside the scope of this assessment.
+- **Completion is hand-waved.** `Order.tryComplete()` is a stub representing a call to a downstream ticketing service. The mechanics of ticket transfer (API calls, retries, idempotency keys) are outside the scope of this assessment.
 - **`NeedsAttention` resolution is not implemented.** The service detects and flags orders that require manual intervention, but the mechanism for routing them to an agent or support queue is not built out. See Future Improvements for some proposed approaches.
 - **Distributed write race conditions are out of scope.** Concurrent checkout attempts on the same order (e.g. duplicate submissions or multi-instance deployments) are not guarded against. This would be addressed with a DB-level pessimistic lock: an atomic `INSERT ... SELECT` into a `checkout_locks` table that checks order existence and current status in a single statement, claimed at the start of `checkout()` and released in a `finally` block. A TTL column plus a background reaper (or a DB-native advisory lock with automatic release on connection drop) would handle abandoned locks in production.
 
@@ -174,10 +164,12 @@ Returns the current status and full status history for the given order.
 
 ### Test Cases
 
-| Scenario | `ExecuteTransaction` result | Final status | Alert fires? |
+| Scenario | `tryCheckout` result | Final status | Alert fires? |
 |---|---|---|---|
-| Valid order, payment authorized, completement succeeds | ✅ Succeeds | `OrderComplete` | No |
-| Invalid order | ❌ Fails | `Pending` (rejected at validation) | No |
+| Payment authorized, completion succeeds | ✅ Succeeds | `Complete` | No |
+| Invalid request body | ❌ Rejected (400) | unchanged | No |
+| Order not found | ❌ Rejected (404) | unchanged | No |
+| Order in terminal state | ❌ Rejected (409) | unchanged | No |
 | Payment authorization fails | ❌ Fails | `PaymentDeclined` | No |
 | Completion fails, void succeeds | ❌ Fails | `Cancelled` | No |
 | Completion fails, void also fails | ❌ Fails | `NeedsAttention` | **Yes** |
