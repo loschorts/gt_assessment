@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid'
 import OrderStatus from './OrderStatus'
 import PaymentMethod from './PaymentMethod'
 import { PaymentDeclinedError, FulfillmentFailedError, PaymentUnvoidableError } from '../errors'
+import { getDb } from '../database'
 
 export interface StatusHistoryEntry {
   status: OrderStatus
@@ -12,21 +13,41 @@ class Order {
   id: string
   clientId: string
   ticketIds: string[]
-  statusHistory: StatusHistoryEntry[]
 
   constructor(clientId: string, ticketIds: string[]) {
     this.id = uuidv4()
     this.clientId = clientId
     this.ticketIds = ticketIds
-    this.statusHistory = []
   }
 
-  logStatus(status: OrderStatus): void {
-    this.statusHistory.push({ status, createdAt: new Date() })
+  async logStatus(status: OrderStatus): Promise<void> {
+    const db = await getDb()
+    await db.run(
+      'INSERT INTO order_status_history (order_id, status) VALUES (?, ?)',
+      this.id, status
+    )
   }
 
-  initialize(): void {
-    this.logStatus(OrderStatus.Pending)
+  async initialize(): Promise<void> {
+    await this.logStatus(OrderStatus.Pending)
+  }
+
+  async getStatus(): Promise<OrderStatus> {
+    const db = await getDb()
+    const row = await db.get<{ status: string }>(
+      'SELECT status FROM order_status_history WHERE order_id = ? ORDER BY id DESC LIMIT 1',
+      this.id
+    )
+    return (row?.status as OrderStatus) ?? OrderStatus.Pending
+  }
+
+  async getStatusHistory(): Promise<StatusHistoryEntry[]> {
+    const db = await getDb()
+    const rows = await db.all<{ status: string; created_at: string }[]>(
+      'SELECT status, created_at FROM order_status_history WHERE order_id = ? ORDER BY id ASC',
+      this.id
+    )
+    return rows.map(r => ({ status: r.status as OrderStatus, createdAt: new Date(r.created_at) }))
   }
 
   async fulfill(): Promise<void> {
@@ -36,33 +57,29 @@ class Order {
   async checkout(payment: PaymentMethod): Promise<OrderStatus> {
     try {
       await payment.authorize()
-      this.logStatus(OrderStatus.PaymentAuthorized)
+      await this.logStatus(OrderStatus.PaymentAuthorized)
       await this.fulfill()
     } catch (e) {
       if (e instanceof PaymentDeclinedError) {
-        this.logStatus(OrderStatus.PaymentDeclined)
+        await this.logStatus(OrderStatus.PaymentDeclined)
         return OrderStatus.PaymentDeclined
       }
       if (e instanceof FulfillmentFailedError) {
         try {
           await payment.void()
-          this.logStatus(OrderStatus.FulfillmentFailed)
+          await this.logStatus(OrderStatus.FulfillmentFailed)
           return OrderStatus.FulfillmentFailed
         } catch (voidError) {
           if (!(voidError instanceof PaymentUnvoidableError)) throw voidError
-          this.logStatus(OrderStatus.NeedsAttention)
+          await this.logStatus(OrderStatus.NeedsAttention)
           return OrderStatus.NeedsAttention
         }
       }
       throw e
     }
 
-    this.logStatus(OrderStatus.OrderComplete)
+    await this.logStatus(OrderStatus.OrderComplete)
     return OrderStatus.OrderComplete
-  }
-
-  getStatus(): OrderStatus {
-    return this.statusHistory.at(-1)?.status ?? OrderStatus.Pending
   }
 }
 

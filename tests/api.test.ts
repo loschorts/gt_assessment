@@ -6,8 +6,8 @@ import PaymentMethod from '../src/models/PaymentMethod'
 import OrderStatus from '../src/models/OrderStatus'
 import { PaymentDeclinedError, FulfillmentFailedError, PaymentUnvoidableError } from '../src/errors'
 
-beforeEach(() => {
-  db.clearAll()
+beforeEach(async () => {
+  await db.clearAll()
   jest.restoreAllMocks()
   // Default: payment and fulfillment succeed
   jest.spyOn(PaymentMethod.prototype, 'authorize').mockResolvedValue()

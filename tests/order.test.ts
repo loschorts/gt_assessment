@@ -1,3 +1,4 @@
+import * as db from '../src/db'
 import Order from '../src/models/Order'
 import PaymentMethod from '../src/models/PaymentMethod'
 import OrderStatus from '../src/models/OrderStatus'
@@ -10,9 +11,11 @@ describe('Order', () => {
   let voidSpy: jest.SpyInstance
   let fulfillSpy: jest.SpyInstance
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await db.clearAll()
     order = new Order('client-1', ['ticket-1', 'ticket-2'])
-    order.initialize()
+    await db.createOrder(order)
+    await order.initialize()
     payment = new PaymentMethod('client-1')
     authorizeSpy = jest.spyOn(payment, 'authorize').mockResolvedValue()
     voidSpy = jest.spyOn(payment, 'void').mockResolvedValue()
@@ -22,8 +25,8 @@ describe('Order', () => {
   afterEach(() => jest.restoreAllMocks())
 
   describe('getStatus()', () => {
-    test('returns Pending before any checkout', () => {
-      expect(order.getStatus()).toBe(OrderStatus.Pending)
+    test('returns Pending before any checkout', async () => {
+      expect(await order.getStatus()).toBe(OrderStatus.Pending)
     })
   })
 
@@ -31,7 +34,7 @@ describe('Order', () => {
     test('payment authorized and fulfillment succeeds → OrderComplete', async () => {
       const status = await order.checkout(payment)
       expect(status).toBe(OrderStatus.OrderComplete)
-      expect(order.getStatus()).toBe(OrderStatus.OrderComplete)
+      expect(await order.getStatus()).toBe(OrderStatus.OrderComplete)
     })
 
     test('payment authorization fails → PaymentDeclined', async () => {
@@ -40,7 +43,7 @@ describe('Order', () => {
       const status = await order.checkout(payment)
 
       expect(status).toBe(OrderStatus.PaymentDeclined)
-      expect(order.getStatus()).toBe(OrderStatus.PaymentDeclined)
+      expect(await order.getStatus()).toBe(OrderStatus.PaymentDeclined)
     })
 
     test('fulfillment fails, void succeeds → FulfillmentFailed', async () => {
@@ -49,7 +52,7 @@ describe('Order', () => {
       const status = await order.checkout(payment)
 
       expect(status).toBe(OrderStatus.FulfillmentFailed)
-      expect(order.getStatus()).toBe(OrderStatus.FulfillmentFailed)
+      expect(await order.getStatus()).toBe(OrderStatus.FulfillmentFailed)
     })
 
     test('fulfillment fails, void also fails → NeedsAttention', async () => {
@@ -59,14 +62,14 @@ describe('Order', () => {
       const status = await order.checkout(payment)
 
       expect(status).toBe(OrderStatus.NeedsAttention)
-      expect(order.getStatus()).toBe(OrderStatus.NeedsAttention)
+      expect(await order.getStatus()).toBe(OrderStatus.NeedsAttention)
     })
   })
 
   describe('statusHistory', () => {
     test('records PaymentAuthorized before OrderComplete on success', async () => {
       await order.checkout(payment)
-      const statuses = order.statusHistory.map(e => e.status)
+      const statuses = (await order.getStatusHistory()).map(e => e.status)
       expect(statuses).toContain(OrderStatus.PaymentAuthorized)
       expect(statuses.at(-1)).toBe(OrderStatus.OrderComplete)
     })
@@ -76,7 +79,7 @@ describe('Order', () => {
 
       await order.checkout(payment)
 
-      const statuses = order.statusHistory.map(e => e.status)
+      const statuses = (await order.getStatusHistory()).map(e => e.status)
       expect(statuses).not.toContain(OrderStatus.PaymentAuthorized)
       expect(statuses).toContain(OrderStatus.PaymentDeclined)
     })
@@ -86,14 +89,15 @@ describe('Order', () => {
 
       await order.checkout(payment)
 
-      const statuses = order.statusHistory.map(e => e.status)
+      const statuses = (await order.getStatusHistory()).map(e => e.status)
       expect(statuses).toContain(OrderStatus.PaymentAuthorized)
       expect(statuses.at(-1)).toBe(OrderStatus.FulfillmentFailed)
     })
 
     test('each history entry has a createdAt timestamp', async () => {
       await order.checkout(payment)
-      order.statusHistory.forEach(entry => {
+      const history = await order.getStatusHistory()
+      history.forEach(entry => {
         expect(entry.createdAt).toBeInstanceOf(Date)
       })
     })

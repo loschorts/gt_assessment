@@ -19,7 +19,7 @@ const CheckoutBody = z.object({
 })
 
 // POST /orders — Initialize Order
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   const result = CreateOrderBody.safeParse(req.body)
   if (!result.success) {
     return res.status(400).json({ error: z.flattenError(result.error).fieldErrors })
@@ -27,10 +27,10 @@ router.post('/', (req: Request, res: Response) => {
 
   const { clientId, ticketIds } = result.data
   const order = new Order(clientId.trim(), ticketIds)
-  order.initialize()
-  db.createOrder(order)
+  await db.createOrder(order)
+  await order.initialize()
 
-  return res.status(201).json({ orderId: order.id, status: order.getStatus() })
+  return res.status(201).json({ orderId: order.id, status: await order.getStatus() })
 })
 
 // POST /orders/:orderId/checkout — Execute Transaction
@@ -44,7 +44,7 @@ router.post('/:orderId/checkout', async (req: Request, res: Response) => {
 
   const { paymentId } = result.data
 
-  const claim = db.claimCheckout(orderId)
+  const claim = await db.claimCheckout(orderId)
   if (!claim.ok) {
     if (claim.reason === 'not_found') return res.status(404).json({ error: 'Order not found' })
     return res.status(409).json({ error: 'Order has already been processed or is currently being processed' })
@@ -57,7 +57,7 @@ router.post('/:orderId/checkout', async (req: Request, res: Response) => {
   try {
     const status = await order.checkout(payment)
     transaction.status = status
-    db.logTransaction(transaction)
+    await db.logTransaction(transaction)
 
     if (status === OrderStatus.NeedsAttention) {
       fireAlert(orderId)
@@ -66,14 +66,14 @@ router.post('/:orderId/checkout', async (req: Request, res: Response) => {
     const httpStatus = status === OrderStatus.OrderComplete ? 200 : 422
     return res.status(httpStatus).json({ status, transactionId: transaction.id })
   } finally {
-    db.releaseCheckout(orderId)
+    await db.releaseCheckout(orderId)
   }
 })
 
 // GET /orders/:orderId/status — Get Order Status
-router.get('/:orderId/status', (req: Request, res: Response) => {
+router.get('/:orderId/status', async (req: Request, res: Response) => {
   const { orderId } = req.params
-  const order = db.getOrder(orderId)
+  const order = await db.getOrder(orderId)
 
   if (!order) {
     return res.status(404).json({ error: 'Order not found' })
@@ -81,8 +81,8 @@ router.get('/:orderId/status', (req: Request, res: Response) => {
 
   return res.json({
     orderId,
-    status: order.getStatus(),
-    history: order.statusHistory,
+    status: await order.getStatus(),
+    history: await order.getStatusHistory(),
   })
 })
 
