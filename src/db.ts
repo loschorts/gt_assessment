@@ -1,6 +1,7 @@
 import Order from './models/Order'
 import OrderStatus from './models/OrderStatus'
 import { getDb } from './database'
+import { logLockEvent, clearLockEvents } from './debugLog'
 
 export type ClaimCheckoutResult =
   | { ok: true; order: Order }
@@ -33,9 +34,12 @@ export async function claimCheckout(orderId: string): Promise<ClaimCheckoutResul
 
   if ((result.changes ?? 0) === 0) {
     const orderRow = await db.get('SELECT id FROM orders WHERE id = ?', orderId)
-    if (!orderRow) return { ok: false, reason: 'not_found' }
-    return { ok: false, reason: 'conflict' }
+    const reason = !orderRow ? 'not_found' : 'conflict'
+    logLockEvent({ type: 'conflict', orderId, conflictReason: reason })
+    return { ok: false, reason }
   }
+
+  logLockEvent({ type: 'claimed', orderId })
 
   const row = await db.get<{ id: string; client_id: string; ticket_ids: string; payment_id: string | null }>(
     'SELECT id, client_id, ticket_ids, payment_id FROM orders WHERE id = ?',
@@ -50,6 +54,7 @@ export async function claimCheckout(orderId: string): Promise<ClaimCheckoutResul
 export async function releaseCheckout(orderId: string): Promise<void> {
   const db = await getDb()
   await db.run('DELETE FROM checkout_locks WHERE order_id = ?', orderId)
+  logLockEvent({ type: 'released', orderId })
 }
 
 export async function createOrder(order: Order): Promise<Order> {
@@ -84,4 +89,5 @@ export async function clearAll(): Promise<void> {
   await db.run('DELETE FROM checkout_locks')
   await db.run('DELETE FROM order_status_history')
   await db.run('DELETE FROM orders')
+  clearLockEvents()
 }

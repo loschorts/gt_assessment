@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Order State Machine — Dev Console</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 13px;
+      background: #0f1117;
+      color: #cdd6f4;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 14px 24px;
+      background: #1e1e2e;
+      border-bottom: 1px solid #313244;
+      font-size: 15px;
+      font-weight: 600;
+      color: #cba6f7;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    header span { color: #6c7086; font-weight: 400; font-size: 12px; }
+
+    .live-indicator { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+
+    .main { padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; }
+
+    .forms { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    .card {
+      background: #1e1e2e;
+      border: 1px solid #313244;
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .card h2 {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #6c7086;
+      margin-bottom: 14px;
+    }
+
+    .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+
+    label { font-size: 11px; color: #a6adc8; }
+
+    input {
+      background: #181825;
+      border: 1px solid #313244;
+      border-radius: 5px;
+      color: #cdd6f4;
+      font-family: inherit;
+      font-size: 13px;
+      padding: 7px 10px;
+      outline: none;
+      transition: border-color .15s;
+    }
+
+    input:focus { border-color: #cba6f7; }
+
+    button {
+      width: 100%;
+      margin-top: 4px;
+      padding: 8px 12px;
+      background: #cba6f7;
+      border: none;
+      border-radius: 5px;
+      color: #1e1e2e;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+
+    button:hover { opacity: .85; }
+    button:disabled { opacity: .4; cursor: not-allowed; }
+
+    .response-card pre {
+      background: #181825;
+      border-radius: 5px;
+      padding: 12px;
+      font-size: 12px;
+      color: #a6e3a1;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .response-card pre.error { color: #f38ba8; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+
+    thead tr { border-bottom: 1px solid #313244; }
+
+    th {
+      text-align: left;
+      padding: 6px 10px;
+      color: #6c7086;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      font-size: 11px;
+    }
+
+    td {
+      padding: 7px 10px;
+      border-bottom: 1px solid #1e1e2e;
+      color: #bac2de;
+      max-width: 240px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    tbody tr { cursor: pointer; transition: background .1s; }
+    tbody tr:hover { background: #181825; }
+    tbody tr.selected { background: #2a273f; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .badge-Initialized       { background: #313244; color: #cdd6f4; }
+    .badge-PaymentAuthorized { background: #1e3a5f; color: #89dceb; }
+    .badge-Complete          { background: #1e3a2e; color: #a6e3a1; }
+    .badge-PaymentDeclined   { background: #3b1e1e; color: #f38ba8; }
+    .badge-FulfillmentFailed { background: #3b2e1e; color: #fab387; }
+    .badge-NeedsAttention    { background: #3b1e3b; color: #f5c2e7; }
+    .badge-Uninitialized     { background: #1e1e2e; color: #585b70; }
+    .badge-claimed           { background: #1e3a2e; color: #a6e3a1; }
+    .badge-released          { background: #313244; color: #cdd6f4; }
+    .badge-conflict          { background: #3b1e1e; color: #f38ba8; }
+
+    .empty { color: #45475a; font-style: italic; padding: 12px 10px; }
+
+    .table-section h2 { margin-bottom: 12px; }
+
+    .refresh-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #a6e3a1;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .3; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React
+
+    function shortId(id) {
+      return id ? id.slice(0, 8) + '…' : '—'
+    }
+
+    function Badge({ status }) {
+      return <span className={`badge badge-${status}`}>{status ?? '—'}</span>
+    }
+
+    function CreateOrderForm({ onSuccess, onError }) {
+      const [clientId, setClientId] = useState('client-1')
+      const [ticketIds, setTicketIds] = useState('ticket-1,ticket-2')
+      const [loading, setLoading] = useState(false)
+
+      async function submit(e) {
+        e.preventDefault()
+        setLoading(true)
+        try {
+          const res = await fetch('/orders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              clientId,
+              ticketIds: ticketIds.split(',').map(s => s.trim()).filter(Boolean),
+            }),
+          })
+          onSuccess({ status: res.status, body: await res.json() })
+        } catch (err) {
+          onError(String(err))
+        } finally {
+          setLoading(false)
+        }
+      }
+
+      return (
+        <div className="card">
+          <h2>POST /orders — Create Order</h2>
+          <form onSubmit={submit}>
+            <div className="field">
+              <label>clientId</label>
+              <input value={clientId} onChange={e => setClientId(e.target.value)} placeholder="client-1" />
+            </div>
+            <div className="field">
+              <label>ticketIds (comma-separated)</label>
+              <input value={ticketIds} onChange={e => setTicketIds(e.target.value)} placeholder="ticket-1,ticket-2" />
+            </div>
+            <button type="submit" disabled={loading}>{loading ? 'Sending…' : 'Create Order'}</button>
+          </form>
+        </div>
+      )
+    }
+
+    function CheckoutForm({ selectedOrderId, onSuccess, onError }) {
+      const [orderId, setOrderId] = useState('')
+      const [paymentId, setPaymentId] = useState('pay-001')
+
+      useEffect(() => {
+        if (selectedOrderId) setOrderId(selectedOrderId)
+      }, [selectedOrderId])
+
+      async function submit(e) {
+        e.preventDefault()
+        try {
+          const res = await fetch(`/orders/${orderId}/checkout`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paymentId }),
+          })
+          onSuccess({ status: res.status, body: await res.json() })
+        } catch (err) {
+          onError(String(err))
+        }
+      }
+
+      return (
+        <div className="card">
+          <h2>POST /orders/:id/checkout — Checkout</h2>
+          <form onSubmit={submit}>
+            <div className="field">
+              <label>orderId</label>
+              <input value={orderId} onChange={e => setOrderId(e.target.value)} placeholder="paste or click a row ↓" />
+            </div>
+            <div className="field">
+              <label>paymentId</label>
+              <input value={paymentId} onChange={e => setPaymentId(e.target.value)} placeholder="pay-001" />
+            </div>
+            <button type="submit" disabled={!orderId}>Checkout</button>
+          </form>
+        </div>
+      )
+    }
+
+    function ResponsePanel({ response }) {
+      if (!response) return null
+      return (
+        <div className="card response-card">
+          <h2>Last Response — HTTP {response.status}</h2>
+          <pre className={response.status >= 400 ? 'error' : ''}>
+            {JSON.stringify(response.body, null, 2)}
+          </pre>
+        </div>
+      )
+    }
+
+    function OrdersTable({ orders, selectedId, onSelect }) {
+      if (!orders.length) return <div className="empty">No orders yet.</div>
+      return (
+        <table>
+          <thead>
+            <tr><th>id</th><th>clientId</th><th>ticketIds</th><th>paymentId</th><th>status</th></tr>
+          </thead>
+          <tbody>
+            {orders.map(o => (
+              <tr key={o.id} className={o.id === selectedId ? 'selected' : ''} onClick={() => onSelect(o.id)} title={o.id}>
+                <td title={o.id}>{shortId(o.id)}</td>
+                <td>{o.client_id}</td>
+                <td>{o.ticket_ids}</td>
+                <td title={o.payment_id}>{o.payment_id ? shortId(o.payment_id) : '—'}</td>
+                <td><Badge status={o.current_status} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )
+    }
+
+    function StatusHistoryTable({ rows }) {
+      if (!rows.length) return <div className="empty">No status history yet.</div>
+      return (
+        <table>
+          <thead>
+            <tr><th>#</th><th>orderId</th><th>status</th><th>createdAt</th></tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.id}>
+                <td>{r.id}</td>
+                <td title={r.order_id}>{shortId(r.order_id)}</td>
+                <td><Badge status={r.status} /></td>
+                <td>{r.created_at}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )
+    }
+
+    function LocksTable({ locks }) {
+      if (!locks.length) return <div className="empty">No active locks.</div>
+      return (
+        <table>
+          <thead>
+            <tr><th>locked orderId</th></tr>
+          </thead>
+          <tbody>
+            {locks.map(l => (
+              <tr key={l.order_id}><td title={l.order_id}>{l.order_id}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      )
+    }
+
+    function LockHistoryTable({ events }) {
+      if (!events.length) return <div className="empty">No lock events yet.</div>
+      return (
+        <table>
+          <thead>
+            <tr><th>type</th><th>orderId</th><th>conflictReason</th><th>timestamp</th></tr>
+          </thead>
+          <tbody>
+            {events.map((e, i) => (
+              <tr key={i}>
+                <td><Badge status={e.type} /></td>
+                <td title={e.orderId}>{shortId(e.orderId)}</td>
+                <td>{e.conflictReason ?? '—'}</td>
+                <td>{e.timestamp}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )
+    }
+
+    function App() {
+      const [dbState, setDbState] = useState({ orders: [], statusHistory: [], locks: [], lockEvents: [] })
+      const [lastResponse, setLastResponse] = useState(null)
+      const [selectedOrderId, setSelectedOrderId] = useState(null)
+
+      const fetchState = useCallback(async () => {
+        try {
+          const res = await fetch('/debug/state')
+          setDbState(await res.json())
+        } catch (_) {}
+      }, [])
+
+      useEffect(() => {
+        fetchState()
+        const timer = setInterval(fetchState, 2000)
+        return () => clearInterval(timer)
+      }, [fetchState])
+
+      function handleSuccess(response) {
+        setLastResponse(response)
+        if (response.body?.orderId) setSelectedOrderId(response.body.orderId)
+        fetchState()
+      }
+
+      return (
+        <>
+          <header>
+            Order State Machine
+            <span>dev console</span>
+            <div className="live-indicator">
+              <div className="refresh-dot" />
+              <span>live</span>
+            </div>
+          </header>
+
+          <div className="main">
+            <div className="forms">
+              <CreateOrderForm onSuccess={handleSuccess} onError={msg => setLastResponse({ status: 0, body: { error: msg } })} />
+              <CheckoutForm selectedOrderId={selectedOrderId} onSuccess={handleSuccess} onError={msg => setLastResponse({ status: 0, body: { error: msg } })} />
+            </div>
+
+            <ResponsePanel response={lastResponse} />
+
+            <div className="card table-section">
+              <h2>Orders ({dbState.orders.length})</h2>
+              <OrdersTable orders={dbState.orders} selectedId={selectedOrderId} onSelect={setSelectedOrderId} />
+            </div>
+
+            <div className="card table-section">
+              <h2>Status History ({dbState.statusHistory.length})</h2>
+              <StatusHistoryTable rows={dbState.statusHistory} />
+            </div>
+
+            <div className="card table-section">
+              <h2>Checkout Locks ({dbState.locks.length})</h2>
+              <LocksTable locks={dbState.locks} />
+            </div>
+
+            <div className="card table-section">
+              <h2>Lock History ({dbState.lockEvents.length})</h2>
+              <LockHistoryTable events={dbState.lockEvents} />
+            </div>
+          </div>
+        </>
+      )
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />)
+  </script>
+</body>
+</html>
