@@ -2,7 +2,6 @@ import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import Order from '../models/Order'
 import PaymentMethod from '../models/PaymentMethod'
-import Transaction from '../models/Transaction'
 import OrderStatus from '../models/OrderStatus'
 import * as db from '../db'
 import { fireAlert } from '../alerts'
@@ -48,19 +47,16 @@ router.post('/:orderId/checkout', async (req: Request, res: Response) => {
   if (!order) return res.status(404).json({ error: 'Order not found' })
 
   const payment = new PaymentMethod(order.clientId)
-  const transaction = new Transaction(orderId, paymentId)
 
   try {
-    const status = await order.checkout(payment)
-    transaction.status = status
-    await db.logTransaction(transaction)
+    const status = await order.checkout(payment, paymentId)
 
     if (status === OrderStatus.NeedsAttention) {
       fireAlert(orderId)
     }
 
     const httpStatus = status === OrderStatus.Complete ? 200 : 422
-    return res.status(httpStatus).json({ status, transactionId: transaction.id })
+    return res.status(httpStatus).json({ status })
   } catch (e) {
     if (e instanceof CheckoutConflictError) {
       return res.status(409).json({ error: e.message })

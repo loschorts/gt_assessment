@@ -10,7 +10,8 @@ export async function getDb(): Promise<Database> {
       CREATE TABLE IF NOT EXISTS orders (
         id         TEXT PRIMARY KEY,
         client_id  TEXT NOT NULL,
-        ticket_ids TEXT NOT NULL
+        ticket_ids TEXT NOT NULL,
+        payment_id TEXT
       );
 
       CREATE TABLE IF NOT EXISTS order_status_history (
@@ -22,13 +23,6 @@ export async function getDb(): Promise<Database> {
 
       CREATE TABLE IF NOT EXISTS checkout_locks (
         order_id TEXT PRIMARY KEY
-      );
-
-      CREATE TABLE IF NOT EXISTS transactions (
-        id         TEXT PRIMARY KEY,
-        order_id   TEXT NOT NULL,
-        payment_id TEXT NOT NULL,
-        status     TEXT
       );
     `)
   }

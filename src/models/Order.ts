@@ -3,6 +3,8 @@ import OrderStatus from './OrderStatus'
 import PaymentMethod from './PaymentMethod'
 import { PaymentDeclinedError, FulfillmentFailedError, PaymentUnvoidableError, CheckoutConflictError } from '../errors'
 import { getDb } from '../database'
+// Circular import with db.ts is intentional and safe: both modules only reference
+// each other inside function bodies, so CommonJS resolves both before any function runs.
 import * as db from '../db'
 
 export interface StatusHistoryEntry {
@@ -14,16 +16,18 @@ class Order {
   id: string
   clientId: string
   ticketIds: string[]
+  paymentId: string | null
 
   constructor(clientId: string, ticketIds: string[]) {
     this.id = uuidv4()
     this.clientId = clientId
     this.ticketIds = ticketIds
+    this.paymentId = null
   }
 
   async logStatus(status: OrderStatus): Promise<void> {
-    const db = await getDb()
-    await db.run(
+    const sqliteDb = await getDb()
+    await sqliteDb.run(
       'INSERT INTO order_status_history (order_id, status) VALUES (?, ?)',
       this.id, status
     )
@@ -35,8 +39,8 @@ class Order {
   }
 
   async getStatus(): Promise<OrderStatus> {
-    const db = await getDb()
-    const row = await db.get<{ status: string }>(
+    const sqliteDb = await getDb()
+    const row = await sqliteDb.get<{ status: string }>(
       'SELECT status FROM order_status_history WHERE order_id = ? ORDER BY id DESC LIMIT 1',
       this.id
     )
@@ -44,8 +48,8 @@ class Order {
   }
 
   async getStatusHistory(): Promise<StatusHistoryEntry[]> {
-    const db = await getDb()
-    const rows = await db.all<{ status: string; created_at: string }[]>(
+    const sqliteDb = await getDb()
+    const rows = await sqliteDb.all<{ status: string; created_at: string }[]>(
       'SELECT status, created_at FROM order_status_history WHERE order_id = ? ORDER BY id ASC',
       this.id
     )
@@ -56,9 +60,12 @@ class Order {
     // Transfers tickets to client — calls ticketing service in production
   }
 
-  async checkout(payment: PaymentMethod): Promise<OrderStatus> {
+  async checkout(payment: PaymentMethod, paymentId: string): Promise<OrderStatus> {
     const claim = await db.claimCheckout(this.id)
     if (!claim.ok) throw new CheckoutConflictError()
+
+    this.paymentId = paymentId
+    await db.savePaymentId(this.id, paymentId)
 
     try {
       await payment.authorize()

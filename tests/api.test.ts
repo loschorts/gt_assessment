@@ -72,7 +72,7 @@ describe('POST /orders/:orderId/checkout — README validation test cases', () =
 
     expect(res.status).toBe(200)
     expect(res.body.status).toBe(OrderStatus.Complete)
-    expect(res.body.transactionId).toBeDefined()
+
   })
 
   test('payment authorization fails → PaymentDeclined', async () => {
