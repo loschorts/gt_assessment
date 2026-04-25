@@ -173,6 +173,8 @@
     .sim-row label { cursor: pointer; color: #cdd6f4; }
 
     .sim-desc { color: #6c7086; font-size: 11px; margin-left: 2px; }
+    .status-result { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+    .status-ts { color: #6c7086; font-size: 12px; }
 
     .table-section h2 { margin-bottom: 12px; }
 
@@ -285,6 +287,62 @@
       )
     }
 
+    function GetStatusForm({ selectedOrderId, checkoutCount, onSuccess, onError }) {
+      const [orderId, setOrderId] = useState('')
+      const [result, setResult] = useState(null)
+
+      async function fetchStatus(id) {
+        try {
+          const res = await fetch(`/orders/${id}/status`)
+          const body = await res.json()
+          onSuccess({ status: res.status, body })
+          if (res.ok) {
+            const latest = body.history?.at(-1)
+            setResult({ status: body.status, timestamp: latest?.createdAt ?? null })
+          } else {
+            setResult(null)
+          }
+        } catch (err) {
+          onError(String(err))
+        }
+      }
+
+      useEffect(() => {
+        if (selectedOrderId) {
+          setOrderId(selectedOrderId)
+          fetchStatus(selectedOrderId)
+        }
+      }, [selectedOrderId])
+
+      useEffect(() => {
+        if (checkoutCount > 0 && orderId) fetchStatus(orderId)
+      }, [checkoutCount])
+
+      async function submit(e) {
+        e.preventDefault()
+        fetchStatus(orderId)
+      }
+
+      return (
+        <div className="card">
+          <h2>GET /orders/:id/status — Get Status</h2>
+          <form onSubmit={submit}>
+            <div className="field">
+              <label>orderId</label>
+              <input value={orderId} onChange={e => setOrderId(e.target.value)} placeholder="paste or click a row ↓" />
+            </div>
+            <button type="submit" disabled={!orderId}>Get Status</button>
+          </form>
+          {result && (
+            <div className="status-result">
+              <Badge status={result.status} />
+              {result.timestamp && <span className="status-ts">{new Date(result.timestamp).toLocaleTimeString()}</span>}
+            </div>
+          )}
+        </div>
+      )
+    }
+
     function ResponsePanel({ response }) {
       if (!response) return null
       return (
@@ -383,6 +441,7 @@
       const [dbState, setDbState] = useState({ orders: [], statusHistory: [] })
       const [lastResponse, setLastResponse] = useState(null)
       const [selectedOrderId, setSelectedOrderId] = useState(null)
+      const [checkoutCount, setCheckoutCount] = useState(0)
 
       const fetchState = useCallback(async () => {
         try {
@@ -403,6 +462,11 @@
         fetchState()
       }
 
+      function handleCheckoutSuccess(response) {
+        handleSuccess(response)
+        setCheckoutCount(c => c + 1)
+      }
+
       return (
         <>
           <header>
@@ -417,7 +481,8 @@
           <div className="main">
             <div className="forms">
               <CreateOrderForm onSuccess={handleSuccess} onError={msg => setLastResponse({ status: 0, body: { error: msg } })} />
-              <CheckoutForm selectedOrderId={selectedOrderId} onSuccess={handleSuccess} onError={msg => setLastResponse({ status: 0, body: { error: msg } })} />
+              <CheckoutForm selectedOrderId={selectedOrderId} onSuccess={handleCheckoutSuccess} onError={msg => setLastResponse({ status: 0, body: { error: msg } })} />
+              <GetStatusForm selectedOrderId={selectedOrderId} checkoutCount={checkoutCount} onSuccess={handleSuccess} onError={msg => setLastResponse({ status: 0, body: { error: msg } })} />
             </div>
 
             <SimulationPanel />
