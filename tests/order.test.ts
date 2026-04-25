@@ -1,7 +1,7 @@
 import Order from '../src/models/Order'
 import PaymentMethod from '../src/models/PaymentMethod'
 import OrderStatus from '../src/models/OrderStatus'
-import { PaymentDeclinedError, FulfillmentFailedError } from '../src/errors'
+import { PaymentDeclinedError, FulfillmentFailedError, PaymentUnvoidableError } from '../src/errors'
 
 describe('Order', () => {
   let order: Order
@@ -54,7 +54,7 @@ describe('Order', () => {
 
     test('fulfillment fails, void also fails → NeedsAttention', async () => {
       fulfillSpy.mockRejectedValue(new FulfillmentFailedError())
-      voidSpy.mockRejectedValue(new Error('Void failed'))
+      voidSpy.mockRejectedValue(new PaymentUnvoidableError())
 
       const status = await order.checkout(payment)
 

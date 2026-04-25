@@ -11,3 +11,10 @@ export class FulfillmentFailedError extends Error {
     this.name = 'FulfillmentFailedError'
   }
 }
+
+export class PaymentUnvoidableError extends Error {
+  constructor(message = 'Payment could not be voided') {
+    super(message)
+    this.name = 'PaymentUnvoidableError'
+  }
+}

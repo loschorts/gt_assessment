@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import OrderStatus from './OrderStatus'
 import PaymentMethod from './PaymentMethod'
-import { PaymentDeclinedError, FulfillmentFailedError } from '../errors'
+import { PaymentDeclinedError, FulfillmentFailedError, PaymentUnvoidableError } from '../errors'
 
 export interface StatusHistoryEntry {
   status: OrderStatus
@@ -56,7 +56,8 @@ class Order {
             await payment.void()
             this.logStatus(OrderStatus.FulfillmentFailed)
             return OrderStatus.FulfillmentFailed
-          } catch {
+          } catch (voidError) {
+            if (!(voidError instanceof PaymentUnvoidableError)) throw voidError
             this.logStatus(OrderStatus.NeedsAttention)
             return OrderStatus.NeedsAttention
           }

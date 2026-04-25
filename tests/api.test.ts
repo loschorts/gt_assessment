@@ -4,7 +4,7 @@ import * as db from '../src/db'
 import Order from '../src/models/Order'
 import PaymentMethod from '../src/models/PaymentMethod'
 import OrderStatus from '../src/models/OrderStatus'
-import { PaymentDeclinedError, FulfillmentFailedError } from '../src/errors'
+import { PaymentDeclinedError, FulfillmentFailedError, PaymentUnvoidableError } from '../src/errors'
 
 beforeEach(() => {
   db.clearAll()
@@ -101,7 +101,7 @@ describe('POST /orders/:orderId/checkout — README validation test cases', () =
 
   test('fulfillment fails, void also fails → NeedsAttention', async () => {
     jest.spyOn(Order.prototype, 'fulfill').mockRejectedValue(new FulfillmentFailedError())
-    jest.spyOn(PaymentMethod.prototype, 'void').mockRejectedValue(new Error('Void failed'))
+    jest.spyOn(PaymentMethod.prototype, 'void').mockRejectedValue(new PaymentUnvoidableError())
     const orderId = await createOrder()
 
     const res = await request(app)
