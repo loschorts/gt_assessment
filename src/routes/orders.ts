@@ -6,6 +6,7 @@ import Transaction from '../models/Transaction'
 import OrderStatus from '../models/OrderStatus'
 import * as db from '../db'
 import { fireAlert } from '../alerts'
+import { CheckoutConflictError } from '../errors'
 
 const router = Router()
 
@@ -43,13 +44,9 @@ router.post('/:orderId/checkout', async (req: Request, res: Response) => {
 
   const { paymentId } = result.data
 
-  const claim = await db.claimCheckout(orderId)
-  if (!claim.ok) {
-    if (claim.reason === 'not_found') return res.status(404).json({ error: 'Order not found' })
-    return res.status(409).json({ error: 'Order has already been processed or is currently being processed' })
-  }
+  const order = await db.getOrder(orderId)
+  if (!order) return res.status(404).json({ error: 'Order not found' })
 
-  const { order } = claim
   const payment = new PaymentMethod(order.clientId)
   const transaction = new Transaction(orderId, paymentId)
 
@@ -64,8 +61,11 @@ router.post('/:orderId/checkout', async (req: Request, res: Response) => {
 
     const httpStatus = status === OrderStatus.Complete ? 200 : 422
     return res.status(httpStatus).json({ status, transactionId: transaction.id })
-  } finally {
-    await db.releaseCheckout(orderId)
+  } catch (e) {
+    if (e instanceof CheckoutConflictError) {
+      return res.status(409).json({ error: e.message })
+    }
+    throw e
   }
 })
 

@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import OrderStatus from './OrderStatus'
 import PaymentMethod from './PaymentMethod'
-import { PaymentDeclinedError, FulfillmentFailedError, PaymentUnvoidableError } from '../errors'
+import { PaymentDeclinedError, FulfillmentFailedError, PaymentUnvoidableError, CheckoutConflictError } from '../errors'
 import { getDb } from '../database'
 import * as db from '../db'
 
@@ -57,6 +57,9 @@ class Order {
   }
 
   async checkout(payment: PaymentMethod): Promise<OrderStatus> {
+    const claim = await db.claimCheckout(this.id)
+    if (!claim.ok) throw new CheckoutConflictError()
+
     try {
       await payment.authorize()
       await this.logStatus(OrderStatus.PaymentAuthorized)
@@ -78,6 +81,8 @@ class Order {
         }
       }
       throw e
+    } finally {
+      await db.releaseCheckout(this.id)
     }
 
     await this.logStatus(OrderStatus.Complete)

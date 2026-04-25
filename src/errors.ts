@@ -18,3 +18,10 @@ export class PaymentUnvoidableError extends Error {
     this.name = 'PaymentUnvoidableError'
   }
 }
+
+export class CheckoutConflictError extends Error {
+  constructor(message = 'Order has already been processed or is currently being processed') {
+    super(message)
+    this.name = 'CheckoutConflictError'
+  }
+}
