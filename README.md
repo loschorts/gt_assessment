@@ -60,7 +60,6 @@ LogStatus(Status::Initialized)
 ```
 try:
   payment.authorize()
-  LogStatus(Status::PaymentAuthorized)  // only reached if authorize() succeeds
   this.complete()
 
 catch (e):
@@ -117,7 +116,6 @@ return getTransactions().latest()?.status ?? Status::Pending
 | Value | Description |
 |---|---|
 | `Pending` | Order initialized, not yet processed |
-| `PaymentAuthorized` | Payment successfully authorized |
 | `PaymentDeclined` | Payment authorization failed |
 | `Cancelled` | Completion failed; payment voided |
 | `NeedsAttention` | Completion failed and void also failed |

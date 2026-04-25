@@ -1,7 +1,6 @@
 enum OrderStatus {
   Uninitialized = 'Uninitialized',
   Initialized = 'Initialized',
-  PaymentAuthorized = 'PaymentAuthorized',
   PaymentDeclined = 'PaymentDeclined',
   Cancelled = 'Cancelled',
   NeedsAttention = 'NeedsAttention',
