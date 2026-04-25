@@ -44,7 +44,7 @@ A small service that models an order state machine with stage-dependent failure 
 
 **Methods**
 
-`private complete(): void`
+`private tryComplete(): void`
 > Completes the order by transferring the tickets.
 
 ---
@@ -56,11 +56,11 @@ LogStatus(Status::Initialized)
 
 ---
 
-`checkout(payment: PaymentMethod) -> Status`
+`tryCheckout(payment: PaymentMethod) -> Status`
 ```
 try:
   payment.authorize()
-  this.complete()
+  this.tryComplete()
 
 catch (e):
   case PaymentDeclined:
@@ -131,7 +131,7 @@ Creates and validates a new order, logging initial `Pending` status.
 #### `POST /orders/:orderId/checkout` — Execute Transaction
 ```
 transaction = new Transaction(orderId, paymentId)
-status = order.checkout(payment)
+status = order.tryCheckout(payment)
 LogTransaction(transaction, status)
 
 if status === Status::NeedsAttention:

@@ -342,7 +342,7 @@
 
     const SIMULATABLE_ERRORS = [
       { name: 'PaymentDeclinedError',   desc: 'authorize() throws → PaymentDeclined' },
-      { name: 'CompletionFailedError', desc: 'complete() throws → Cancelled (or NeedsAttention if combined below)' },
+      { name: 'CompletionFailedError', desc: 'tryComplete() throws → Cancelled (or NeedsAttention if combined below)' },
       { name: 'PaymentUnvoidableError', desc: 'void() throws → NeedsAttention (combine with CompletionFailedError)' },
     ]
 

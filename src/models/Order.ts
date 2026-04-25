@@ -57,17 +57,17 @@ class Order {
     return rows.map(r => ({ status: r.status as OrderStatus, createdAt: new Date(r.created_at) }))
   }
 
-  async complete(): Promise<void> {
+  async tryComplete(): Promise<void> {
     throwIfSimulated('CompletionFailedError')
   }
 
-  async checkout(payment: PaymentMethod, paymentId: string): Promise<OrderStatus> {
+  async tryCheckout(payment: PaymentMethod, paymentId: string): Promise<OrderStatus> {
     this.paymentId = paymentId
     await db.savePaymentId(this.id, paymentId)
 
     try {
       await payment.authorize()
-      await this.complete()
+      await this.tryComplete()
     } catch (e) {
       if (e instanceof PaymentDeclinedError) {
         await this.logStatus(OrderStatus.PaymentDeclined)

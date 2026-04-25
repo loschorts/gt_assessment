@@ -46,7 +46,7 @@ router.post('/:orderId/checkout', async (req: Request, res: Response) => {
   if (!order) return res.status(404).json({ error: 'Order not found' })
 
   const payment = new PaymentMethod(order.clientId)
-  const status = await order.checkout(payment, paymentId)
+  const status = await order.tryCheckout(payment, paymentId)
 
   if (status === OrderStatus.NeedsAttention) {
     fireAlert(orderId)

@@ -31,7 +31,7 @@ describe('Order', () => {
 
   describe('checkout() — README validation test cases', () => {
     test('payment authorized and fulfillment succeeds → Complete', async () => {
-      const status = await order.checkout(payment, 'pay-test')
+      const status = await order.tryCheckout(payment, 'pay-test')
       expect(status).toBe(OrderStatus.Complete)
       expect(await order.getStatus()).toBe(OrderStatus.Complete)
     })
@@ -39,7 +39,7 @@ describe('Order', () => {
     test('payment authorization fails → PaymentDeclined', async () => {
       authorizeSpy.mockRejectedValue(new PaymentDeclinedError())
 
-      const status = await order.checkout(payment, 'pay-test')
+      const status = await order.tryCheckout(payment, 'pay-test')
 
       expect(status).toBe(OrderStatus.PaymentDeclined)
       expect(await order.getStatus()).toBe(OrderStatus.PaymentDeclined)
@@ -48,7 +48,7 @@ describe('Order', () => {
     test('fulfillment fails, void succeeds → FulfillmentFailed', async () => {
       fulfillSpy.mockRejectedValue(new FulfillmentFailedError())
 
-      const status = await order.checkout(payment, 'pay-test')
+      const status = await order.tryCheckout(payment, 'pay-test')
 
       expect(status).toBe(OrderStatus.FulfillmentFailed)
       expect(await order.getStatus()).toBe(OrderStatus.FulfillmentFailed)
@@ -58,7 +58,7 @@ describe('Order', () => {
       fulfillSpy.mockRejectedValue(new FulfillmentFailedError())
       voidSpy.mockRejectedValue(new PaymentUnvoidableError())
 
-      const status = await order.checkout(payment, 'pay-test')
+      const status = await order.tryCheckout(payment, 'pay-test')
 
       expect(status).toBe(OrderStatus.NeedsAttention)
       expect(await order.getStatus()).toBe(OrderStatus.NeedsAttention)
@@ -67,7 +67,7 @@ describe('Order', () => {
 
   describe('statusHistory', () => {
     test('records PaymentAuthorized before Complete on success', async () => {
-      await order.checkout(payment, 'pay-test')
+      await order.tryCheckout(payment, 'pay-test')
       const statuses = (await order.getStatusHistory()).map(e => e.status)
       expect(statuses).toContain(OrderStatus.PaymentAuthorized)
       expect(statuses.at(-1)).toBe(OrderStatus.Complete)
@@ -76,7 +76,7 @@ describe('Order', () => {
     test('does not record PaymentAuthorized when payment is declined', async () => {
       authorizeSpy.mockRejectedValue(new PaymentDeclinedError())
 
-      await order.checkout(payment, 'pay-test')
+      await order.tryCheckout(payment, 'pay-test')
 
       const statuses = (await order.getStatusHistory()).map(e => e.status)
       expect(statuses).not.toContain(OrderStatus.PaymentAuthorized)
@@ -86,7 +86,7 @@ describe('Order', () => {
     test('records PaymentAuthorized then FulfillmentFailed when void succeeds', async () => {
       fulfillSpy.mockRejectedValue(new FulfillmentFailedError())
 
-      await order.checkout(payment, 'pay-test')
+      await order.tryCheckout(payment, 'pay-test')
 
       const statuses = (await order.getStatusHistory()).map(e => e.status)
       expect(statuses).toContain(OrderStatus.PaymentAuthorized)
@@ -94,7 +94,7 @@ describe('Order', () => {
     })
 
     test('each history entry has a createdAt timestamp', async () => {
-      await order.checkout(payment, 'pay-test')
+      await order.tryCheckout(payment, 'pay-test')
       const history = await order.getStatusHistory()
       history.forEach(entry => {
         expect(entry.createdAt).toBeInstanceOf(Date)
