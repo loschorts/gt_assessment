@@ -55,7 +55,7 @@ describe('POST /orders', () => {
 
 // ─── POST /orders/:orderId/checkout ───────────────────────────────────────────
 
-describe('POST /orders/:orderId/checkout — README validation test cases', () => {
+describe('POST /orders/:orderId/checkout — order creation and state transition behavior', () => {
   async function createOrder(): Promise<string> {
     const res = await request(app)
       .post('/orders')
@@ -75,8 +75,50 @@ describe('POST /orders/:orderId/checkout — README validation test cases', () =
 
   })
 
-  test('payment authorization fails → PaymentDeclined', async () => {
+  test('payment authorization fails → PaymentDeclined, completion not attempted', async () => {
     jest.spyOn(PaymentMethod.prototype, 'authorize').mockRejectedValue(new PaymentDeclinedError())
+    const completeSpy = jest.spyOn(Order.prototype, 'tryComplete')
+    const orderId = await createOrder()
+
+    const res = await request(app)
+      .post(`/orders/${orderId}/checkout`)
+      .send({ paymentId: 'pay-123' })
+
+    expect(res.status).toBe(422)
+    expect(res.body.status).toBe(OrderStatus.PaymentDeclined)
+    expect(completeSpy).not.toHaveBeenCalled()
+  })
+
+  test('payment declined even when completion would also fail → PaymentDeclined', async () => {
+    jest.spyOn(PaymentMethod.prototype, 'authorize').mockRejectedValue(new PaymentDeclinedError())
+    jest.spyOn(Order.prototype, 'tryComplete').mockRejectedValue(new CompletionFailedError())
+    const orderId = await createOrder()
+
+    const res = await request(app)
+      .post(`/orders/${orderId}/checkout`)
+      .send({ paymentId: 'pay-123' })
+
+    expect(res.status).toBe(422)
+    expect(res.body.status).toBe(OrderStatus.PaymentDeclined)
+  })
+
+  test('payment declined even when void would also fail → PaymentDeclined', async () => {
+    jest.spyOn(PaymentMethod.prototype, 'authorize').mockRejectedValue(new PaymentDeclinedError())
+    jest.spyOn(PaymentMethod.prototype, 'void').mockRejectedValue(new PaymentUnvoidableError())
+    const orderId = await createOrder()
+
+    const res = await request(app)
+      .post(`/orders/${orderId}/checkout`)
+      .send({ paymentId: 'pay-123' })
+
+    expect(res.status).toBe(422)
+    expect(res.body.status).toBe(OrderStatus.PaymentDeclined)
+  })
+
+  test('payment declined even when both completion and void would fail → PaymentDeclined', async () => {
+    jest.spyOn(PaymentMethod.prototype, 'authorize').mockRejectedValue(new PaymentDeclinedError())
+    jest.spyOn(Order.prototype, 'tryComplete').mockRejectedValue(new CompletionFailedError())
+    jest.spyOn(PaymentMethod.prototype, 'void').mockRejectedValue(new PaymentUnvoidableError())
     const orderId = await createOrder()
 
     const res = await request(app)
