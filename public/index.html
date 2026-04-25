@@ -175,6 +175,9 @@
     .sim-desc { color: #6c7086; font-size: 11px; margin-left: 2px; }
     .status-result { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
     .status-ts { color: #6c7086; font-size: 12px; }
+    .exchange-section { margin-bottom: 12px; }
+    .exchange-section:last-child { margin-bottom: 0; }
+    .exchange-label { font-size: 11px; font-weight: 600; color: #6c7086; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
 
     .table-section h2 { margin-bottom: 12px; }
 
@@ -213,15 +216,13 @@
         e.preventDefault()
         setLoading(true)
         try {
+          const reqBody = { clientId, ticketIds: ticketIds.split(',').map(s => s.trim()).filter(Boolean) }
           const res = await fetch('/orders', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              clientId,
-              ticketIds: ticketIds.split(',').map(s => s.trim()).filter(Boolean),
-            }),
+            body: JSON.stringify(reqBody),
           })
-          onSuccess({ status: res.status, body: await res.json() })
+          onSuccess({ request: { method: 'POST', url: '/orders', body: reqBody }, status: res.status, body: await res.json() })
         } catch (err) {
           onError(String(err))
         } finally {
@@ -258,12 +259,13 @@
       async function submit(e) {
         e.preventDefault()
         try {
+          const reqBody = { paymentId }
           const res = await fetch(`/orders/${orderId}/checkout`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ paymentId }),
+            body: JSON.stringify(reqBody),
           })
-          onSuccess({ status: res.status, body: await res.json() })
+          onSuccess({ request: { method: 'POST', url: `/orders/${orderId}/checkout`, body: reqBody }, status: res.status, body: await res.json() })
         } catch (err) {
           onError(String(err))
         }
@@ -295,7 +297,7 @@
         try {
           const res = await fetch(`/orders/${id}/status`)
           const body = await res.json()
-          onSuccess({ status: res.status, body })
+          onSuccess({ request: { method: 'GET', url: `/orders/${id}/status` }, status: res.status, body })
           if (res.ok) {
             const latest = body.history?.at(-1)
             setResult({ status: body.status, timestamp: latest?.createdAt ?? null })
@@ -308,10 +310,7 @@
       }
 
       useEffect(() => {
-        if (selectedOrderId) {
-          setOrderId(selectedOrderId)
-          fetchStatus(selectedOrderId)
-        }
+        if (selectedOrderId) setOrderId(selectedOrderId)
       }, [selectedOrderId])
 
       async function submit(e) {
@@ -341,12 +340,20 @@
 
     function ResponsePanel({ response }) {
       if (!response) return null
+      const { request: req, status, body } = response
       return (
         <div className="card response-card">
-          <h2>Last Response — HTTP {response.status}</h2>
-          <pre className={response.status >= 400 ? 'error' : ''}>
-            {JSON.stringify(response.body, null, 2)}
-          </pre>
+          <h2>Last Exchange</h2>
+          {req && (
+            <div className="exchange-section">
+              <div className="exchange-label">Request — {req.method} {req.url}</div>
+              <pre>{req.body ? JSON.stringify(req.body, null, 2) : '(no body)'}</pre>
+            </div>
+          )}
+          <div className="exchange-section">
+            <div className="exchange-label">Response — HTTP {status}</div>
+            <pre className={status >= 400 ? 'error' : ''}>{JSON.stringify(body, null, 2)}</pre>
+          </div>
         </div>
       )
     }
