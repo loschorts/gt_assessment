@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { getDb } from '../database'
 import { getLockEvents } from '../debugLog'
+import { getSimulatedErrors, setSimulatedErrors } from '../simulation'
 
 const router = Router()
 
@@ -19,6 +20,16 @@ router.get('/state', async (_req: Request, res: Response) => {
   ])
 
   return res.json({ orders, statusHistory, locks, lockEvents: getLockEvents() })
+})
+
+router.get('/simulate', (_req: Request, res: Response) => {
+  res.json({ simulating: getSimulatedErrors() })
+})
+
+router.post('/simulate', (req: Request, res: Response) => {
+  const { errors } = req.body as { errors?: string[] }
+  setSimulatedErrors(Array.isArray(errors) ? errors : [])
+  res.json({ simulating: getSimulatedErrors() })
 })
 
 export default router

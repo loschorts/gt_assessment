@@ -6,6 +6,7 @@ import { getDb } from '../database'
 // Circular import with db.ts is intentional and safe: both modules only reference
 // each other inside function bodies, so CommonJS resolves both before any function runs.
 import * as db from '../db'
+import { throwIfSimulated } from '../simulation'
 
 export interface StatusHistoryEntry {
   status: OrderStatus
@@ -57,10 +58,11 @@ class Order {
   }
 
   async fulfill(): Promise<void> {
-    // Transfers tickets to client — calls ticketing service in production
+    throwIfSimulated('FulfillmentFailedError')
   }
 
   async checkout(payment: PaymentMethod, paymentId: string): Promise<OrderStatus> {
+    throwIfSimulated('CheckoutConflictError')
     const claim = await db.claimCheckout(this.id)
     if (!claim.ok) throw new CheckoutConflictError()
 

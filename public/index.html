@@ -151,6 +151,30 @@
 
     .empty { color: #45475a; font-style: italic; padding: 12px 10px; }
 
+    .sim-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 0;
+      border-bottom: 1px solid #1e1e2e;
+    }
+
+    .sim-row:last-child { border-bottom: none; }
+
+    .sim-row input[type="checkbox"] {
+      width: 15px;
+      height: 15px;
+      min-width: 15px;
+      padding: 0;
+      border-radius: 3px;
+      cursor: pointer;
+      accent-color: #cba6f7;
+    }
+
+    .sim-row label { cursor: pointer; color: #cdd6f4; }
+
+    .sim-desc { color: #6c7086; font-size: 11px; margin-left: 2px; }
+
     .table-section h2 { margin-bottom: 12px; }
 
     .refresh-dot {
@@ -354,6 +378,46 @@
       )
     }
 
+    const SIMULATABLE_ERRORS = [
+      { name: 'PaymentDeclinedError',   desc: 'authorize() throws → PaymentDeclined' },
+      { name: 'FulfillmentFailedError', desc: 'fulfill() throws → FulfillmentFailed (or NeedsAttention if combined below)' },
+      { name: 'PaymentUnvoidableError', desc: 'void() throws → NeedsAttention (combine with FulfillmentFailedError)' },
+      { name: 'CheckoutConflictError',  desc: 'checkout blocked immediately → 409' },
+    ]
+
+    function SimulationPanel() {
+      const [active, setActive] = useState(new Set())
+
+      useEffect(() => {
+        fetch('/debug/simulate')
+          .then(r => r.json())
+          .then(d => setActive(new Set(d.simulating)))
+      }, [])
+
+      async function toggle(name) {
+        const next = new Set(active)
+        if (next.has(name)) next.delete(name); else next.add(name)
+        setActive(next)
+        await fetch('/debug/simulate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ errors: [...next] }),
+        })
+      }
+
+      return (
+        <div className="card">
+          <h2>Error Simulation</h2>
+          {SIMULATABLE_ERRORS.map(({ name, desc }) => (
+            <div key={name} className="sim-row">
+              <input type="checkbox" id={name} checked={active.has(name)} onChange={() => toggle(name)} />
+              <label htmlFor={name}>{name} <span className="sim-desc">{desc}</span></label>
+            </div>
+          ))}
+        </div>
+      )
+    }
+
     function App() {
       const [dbState, setDbState] = useState({ orders: [], statusHistory: [], locks: [], lockEvents: [] })
       const [lastResponse, setLastResponse] = useState(null)
@@ -394,6 +458,8 @@
               <CreateOrderForm onSuccess={handleSuccess} onError={msg => setLastResponse({ status: 0, body: { error: msg } })} />
               <CheckoutForm selectedOrderId={selectedOrderId} onSuccess={handleSuccess} onError={msg => setLastResponse({ status: 0, body: { error: msg } })} />
             </div>
+
+            <SimulationPanel />
 
             <ResponsePanel response={lastResponse} />
 
