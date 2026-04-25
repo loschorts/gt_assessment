@@ -138,6 +138,8 @@ if status === Status::NeedsAttention:
   fireAlert(orderId)
 ```
 
+If the order is already `Complete`, returns `409 Conflict`. This is intentional: tickets are non-fungible assets — once transferred, the same order cannot be used to claim them again. Re-checkout on a completed order would risk double-transfer of the same tickets to the same or a different buyer.
+
 #### `GET /orders/:orderId/status` — Get Order Status
 Returns the current status and full status history for the given order.
 
