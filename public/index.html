@@ -291,11 +291,11 @@
       const [orderId, setOrderId] = useState('')
       const [result, setResult] = useState(null)
 
-      async function fetchStatus(id) {
+      async function fetchStatus(id, { notify = false } = {}) {
         try {
           const res = await fetch(`/orders/${id}/status`)
           const body = await res.json()
-          onSuccess({ status: res.status, body })
+          if (notify) onSuccess({ status: res.status, body })
           if (res.ok) {
             const latest = body.history?.at(-1)
             setResult({ status: body.status, timestamp: latest?.createdAt ?? null })
@@ -303,7 +303,7 @@
             setResult(null)
           }
         } catch (err) {
-          onError(String(err))
+          if (notify) onError(String(err))
         }
       }
 
@@ -320,7 +320,7 @@
 
       async function submit(e) {
         e.preventDefault()
-        fetchStatus(orderId)
+        fetchStatus(orderId, { notify: true })
       }
 
       return (
