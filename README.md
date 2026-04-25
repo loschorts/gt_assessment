@@ -1,191 +1,151 @@
-# GT Assessment: Engineering Design Doc
+# Order State Machine
 
-## Context
-
-[CEP Sr. Engineer Take-Home](https://docs.google.com/document/d/1km1kusC0yu5ZqTqnwEhP66-KuYiOyR4xjxvtJYz1mZE/edit?tab=t.0)
-
-A small service that models an order state machine with stage-dependent failure recovery.
+A TypeScript/Express service modeling an order state machine with stage-dependent failure recovery.
 
 ---
 
-## Overview
+## What I Built
 
-### Three-Step Processing
-1. Initialization
-2. Payment Validation
-3. Completion
+A REST API that enforces a three-step checkout flow — initialization, payment authorization, and completion — where each failure mode triggers a different recovery path:
 
-### Error Handling
-- Payment validation failure → reject order
-- Completion failure → void payment + cancel order
-- Void failure → flag `Needs Attention`
+- **Payment declined** → reject the order. No cleanup needed.
+- **Completion fails after payment authorized** → void the payment, mark as `Cancelled`.
+- **Completion fails and void also fails** → mark as `NeedsAttention` for manual resolution. Alert fires.
 
-### Technical Requirements
-- State modeling
-- Transition validation
-- Timestamped history
-- Small API
+### State Machine
 
-### Business Concerns
-- UX speed
-- Seamless checkout experience
-- 100% coverage for payment error recovery
+| Status | Description |
+|---|---|
+| `Initialized` | Order created, awaiting checkout |
+| `PaymentAuthorized` | Payment authorized; completion in progress |
+| `PaymentDeclined` | Authorization failed |
+| `Cancelled` | Completion failed; payment voided |
+| `NeedsAttention` | Completion failed and void also failed |
+| `Complete` | Order successfully fulfilled |
 
----
+Valid transitions are declared in a single `VALID_TRANSITIONS` table in `OrderStatus.ts`. `Order.tryCheckout()` consults the table rather than implementing ad-hoc guards — the state machine is auditable at a glance and new states are cheap to add.
 
-## Architecture
+`PaymentDeclined` and `Cancelled` are retryable. `NeedsAttention` and `Complete` are terminal.
 
-### Models
+`PaymentAuthorized` is a transitional status logged for diagnostic value. Without it, a resolving agent would have to query the payment provider directly to determine whether a charge is outstanding. It is not a stable resting state: the order moves through it immediately to `Complete`, `Cancelled`, or `NeedsAttention` within the same request. On retry, a fresh authorization is always issued — resuming a stale one risks acting on a charge that has already expired or been reversed.
 
-#### `Order`
-**Params**
-- `clientId: string`
-- `ticketIds: string[]`
+### Checkout Logic
 
-**Methods**
-
-`private tryComplete(): void`
-> Completes the order by transferring the tickets.
-
----
-
-`initialize(): void`
 ```
-LogStatus(OrderStatus::Initialized)
-```
+tryCheckout(payment, paymentId) → OrderStatus
 
----
-
-`tryCheckout(payment: PaymentMethod, paymentId: string) -> OrderStatus`
-```
-if !canTransition(currentStatus, OrderStatus::PaymentAuthorized):
+if !canTransition(currentStatus, PaymentAuthorized):
   throw InvalidTransitionError
 
 try:
   payment.authorize()
-  LogStatus(OrderStatus::PaymentAuthorized)
-  this.tryComplete()
+  LogStatus(PaymentAuthorized)
+  tryComplete()
 
-catch (e):
-  case PaymentDeclined:
-    LogStatus(OrderStatus::PaymentDeclined)
-    return OrderStatus::PaymentDeclined
+catch PaymentDeclined:
+  LogStatus(PaymentDeclined)
+  return PaymentDeclined
 
-  case CompletionFailed:
-    try:
-      payment.void()
-      LogStatus(OrderStatus::Cancelled)
-      return OrderStatus::Cancelled
-    catch (e):
-      LogStatus(OrderStatus::NeedsAttention)
-      return OrderStatus::NeedsAttention
+catch CompletionFailed:
+  try:
+    payment.void()
+    LogStatus(Cancelled)
+    return Cancelled
+  catch:
+    LogStatus(NeedsAttention)
+    return NeedsAttention
 
-LogStatus(OrderStatus::Complete)
-return OrderStatus::Complete
+LogStatus(Complete)
+return Complete
 ```
 
----
+### Models
 
-`getStatus(): OrderStatus`
-```
-row = order_status_history.latest(orderId)
-if !row: throw OrderNotInitializedError
-return row.status
-```
+#### `Order`
+- `clientId: string`
+- `ticketIds: string[]`
 
----
+Key methods: `initialize()`, `tryCheckout(payment, paymentId)`, `getStatus()`, `getStatusHistory()`
 
 #### `PaymentMethod`
-**Params**
-- `clientId: string`
+A stub interface with two methods: `authorize()` and `void()`. Either can be configured to throw to simulate failure scenarios.
 
-**Methods**
-- `authorize(): void`
-- `void(): void`
+### API
 
----
-
-#### `OrderStatus` (Enum)
-| Value | Description |
+| Endpoint | Description |
 |---|---|
-| `Initialized` | Order created, not yet checked out |
-| `PaymentAuthorized` | Payment authorized; completion in progress |
-| `PaymentDeclined` | Payment authorization failed |
-| `Cancelled` | Completion failed; payment voided |
-| `NeedsAttention` | Completion failed and void also failed |
-| `Complete` | Order successfully completed |
+| `POST /orders` | Initialize an order. Body: `{ clientId, ticketIds }` |
+| `POST /orders/:orderId/checkout` | Advance through payment + completion. Body: `{ paymentId }` |
+| `GET /orders/:orderId/status` | Get current status and full status history |
+
+`POST /checkout` on a `Complete` order returns `409 Conflict`. Tickets are non-fungible — once transferred, re-checkout on the same order would risk double-transfer to the same or a different buyer.
+
+`POST /checkout` on a `NeedsAttention` order also returns `409`. Manual resolution is required before the order can proceed.
+
+### Test Coverage
+
+| Scenario | Final Status | Alert? |
+|---|---|---|
+| Happy path | `Complete` | No |
+| Invalid request body | unchanged (400) | No |
+| Order not found | unchanged (404) | No |
+| Order in terminal state | unchanged (409) | No |
+| Payment authorization fails | `PaymentDeclined` | No |
+| Completion fails, void succeeds | `Cancelled` | No |
+| Completion fails, void also fails | `NeedsAttention` | **Yes** |
 
 ---
 
-### API Actions
+## How to Run
 
-#### `POST /orders` — Initialize Order
-Creates and validates a new order, logging initial `Initialized` status.
-
-#### `POST /orders/:orderId/checkout` — Execute Checkout
+```bash
+npm install
+npm run dev    # development server on :3000
+npm test       # run all tests
+npm run build  # compile TypeScript
+npm start      # run compiled output
 ```
-status = order.tryCheckout(payment, paymentId)
 
-if status === OrderStatus::NeedsAttention:
-  fireAlert(orderId)
-```
+The service uses SQLite with an in-memory database, so state does not persist across restarts. No external dependencies are required.
 
-If the order is already `Complete`, returns `409 Conflict`. This is intentional: tickets are non-fungible assets — once transferred, the same order cannot be used to claim them again. Re-checkout on a completed order would risk double-transfer of the same tickets to the same or a different buyer.
-
-#### `GET /orders/:orderId/status` — Get Order Status
-Returns the current status and full status history for the given order.
+A browser-based test UI is available at `http://localhost:3000` when the dev server is running.
 
 ---
 
-## Assumptions
+## Tradeoffs
 
-- **Inventory management is out of scope.** The service assumes tickets are available and allocatable. Availability checks, seat reservation, and inventory locking against concurrent buyers are not modeled.
-- **Completion is hand-waved.** `Order.tryComplete()` is a stub representing a call to a downstream ticketing service. The mechanics of ticket transfer (API calls, retries, idempotency keys) are outside the scope of this assessment.
-- **`NeedsAttention` resolution is not implemented.** The service detects and flags orders that require manual intervention, but the mechanism for routing them to an agent or support queue is not built out. See Future Improvements for some proposed approaches.
-- **Distributed write race conditions are out of scope.** Concurrent checkout attempts on the same order (e.g. duplicate submissions or multi-instance deployments) are not guarded against. This would be addressed with a DB-level pessimistic lock: an atomic `INSERT ... SELECT` into a `checkout_locks` table that checks order existence and current status in a single statement, claimed at the start of `checkout()` and released in a `finally` block. A TTL column plus a background reaper (or a DB-native advisory lock with automatic release on connection drop) would handle abandoned locks in production.
+**SQLite over plain in-memory structures.** Even though the database is in-memory (`:memory:`), using SQLite gives the status history a real relational model with timestamps, ordered rows, and indexed lookups. The schema makes the audit trail queryable and the storage layer easy to swap for a persistent DB later.
 
----
+**Serialized payment + completion processing.** Payment authorization and order completion run sequentially in a single request. This preserves transaction integrity at the cost of some latency, which is the right tradeoff: a checkout where a charge and a ticket transfer are partially applied is a harder problem than a slightly slower checkout.
 
-## Decisions & Tradeoffs
+**`PaymentAuthorized` as a transitional status.** Logging `PaymentAuthorized` immediately before attempting completion means the status history alone is sufficient to determine whether a charge is outstanding on a failed order. The alternative — inferring authorization from the presence of a `paymentId` — requires cross-referencing the payment provider.
 
-- **DB over in-memory storage:** The transaction log is the source of truth for order status. Accuracy is critical, and lookups remain fast with sensible indexing. In-memory caching is explicitly avoided to prevent stale state.
+**Explicit `VALID_TRANSITIONS` table.** Declaring valid transitions as a data structure has real advantages: the entire state machine is visible in one place, every `logStatus` call is uniformly gated by `assertTransition` so invalid transitions fail loudly, and adding a new state requires only a new table entry rather than changes scattered across business logic. The table can also be unit-tested in isolation, independent of the checkout flow.
 
-- **`currentState` as first-class field (single-instance):** Safe under single-instance in-memory operation. A multi-instance deployment would require optimistic locking or a distributed lock to prevent race conditions on state transitions.
+The tradeoff is expressiveness. A data-driven table can only represent "from → to" edges — it has no way to encode the *conditions* under which a transition is valid. Guard clauses like "can only transition to `FraudReview` if the order value exceeds a threshold" or "void is only allowed if authorization happened within 24 hours" must live in the calling code, outside the table. This means the table is not a complete specification of the state machine; it's a partial one, and the rest is implicit in the surrounding logic.
 
-- **Serialized payment + completement processing:** Serializing payment authorization and order completion preserves transaction integrity at the cost of some latency. This tradeoff is justified because transaction integrity is a critical business concern, while the latency impact is minimal and has no effect on system integrity, trust, or complexity.
+The alternative — encoding transitions implicitly in code, using TypeScript discriminated unions and exhaustive `switch` statements — can surface invalid transitions at compile time rather than runtime, and keeps each transition co-located with the conditions that trigger it. The cost is readability and maintainability: the full set of valid transitions is no longer visible in one place, and adding a new state requires auditing every `switch` block that might need to handle it. For a machine this size, either approach works; the table wins on clarity. At significantly higher complexity, a dedicated state machine library such as XState or Relay handles both.
 
-- **`PaymentAuthorized` is a transitional status logged for diagnostic value:** Authorization is recorded as a discrete status entry immediately before completion is attempted. This gives the status history a complete audit trail of each checkout attempt. Without this entry, a resolving agent would have to query the payment provider directly to determine whether a charge is outstanding. With it, the history alone confirms that authorization succeeded. `PaymentAuthorized` is not a stable resting state: in the normal flow the order moves through it immediately to `Complete`, `Cancelled`, or `NeedsAttention` within the same request. On a retry, a fresh authorization is always started regardless of any prior `PaymentAuthorized` entry — resuming a stale authorization would risk acting on a charge that may have already expired or been reversed by the provider.
-
-- **Explicit transition table (`VALID_TRANSITIONS`):** Rather than encoding checkout eligibility as a single guard (`if status === Complete, reject`), valid transitions are declared as a data structure in `OrderStatus.ts`. `Order.tryCheckout()` consults the table rather than implementing ad-hoc logic. This makes the state machine auditable at a glance and keeps new states cheap to add — a new state only requires an entry in the table, not changes scattered across business logic. Some intermediate states that would justify this extensibility:
-  - **`FraudReview`** — order flagged by a risk model during authorization; checkout blocked pending a manual or automated clearance step before re-attempting payment.
-  - **`RateLimited`** — too many checkout attempts in a short window; blocks further attempts until a cooldown expires, protecting against both accidental duplicate submissions and intentional abuse.
-  - **`InventoryHold`** — tickets reserved but not yet confirmed available by the downstream ticketing service; checkout paused until the hold resolves or times out.
-  - **`AwaitingExternalConfirmation`** — payment authorized but completion is waiting on an async callback (e.g. a 3DS challenge or a slow downstream ACK); order held in limbo until confirmation arrives.
-  - **`OrderExpired`** — order was initialized but not checked out within an allowed window; terminal state that prevents stale orders from being fulfilled long after the customer's intent has lapsed.
-  - **`PromotionExpired`** — a discount or promotional price applied at initialization is no longer valid at checkout time; blocks completion and prompts the customer to re-price the order before retrying.
+**Scope exclusions:**
+- **Inventory management** is out of scope. The service assumes tickets are available; seat reservation and locking against concurrent buyers are not modeled.
+- **`tryComplete()` is a stub.** Ticket transfer mechanics (downstream API calls, retries, idempotency keys) are outside scope.
+- **`NeedsAttention` resolution is detected but not routed.** The mechanism for assigning cases to a support queue is not built out.
+- **Distributed write race conditions are out of scope.** Concurrent checkout attempts on the same order are not guarded against. This would be addressed with a DB-level pessimistic lock: an atomic `INSERT ... SELECT` into a `checkout_locks` table, claimed at checkout entry and released in a `finally` block. A TTL column plus a background reaper (or a DB-native advisory lock) would handle abandoned locks in production.
 
 ---
 
-## Validation
+## What I'd Do Differently
 
-### Test Cases
+**`NeedsAttention` routing.** The right approach depends on who resolves it. For human agents, a `GET /orders?status=NeedsAttention` endpoint feeds a support queue polled by a recurring job. For automated agents, a pub-sub model pushes directly onto an event queue. The current implementation fires an in-process alert — the hook is there, but the destination isn't.
 
-| Scenario | `tryCheckout` result | Final status | Alert fires? |
-|---|---|---|---|
-| Payment authorized, completion succeeds | ✅ Succeeds | `Complete` | No |
-| Invalid request body | ❌ Rejected (400) | unchanged | No |
-| Order not found | ❌ Rejected (404) | unchanged | No |
-| Order in terminal state | ❌ Rejected (409) | unchanged | No |
-| Payment authorization fails | ❌ Fails | `PaymentDeclined` | No |
-| Completion fails, void succeeds | ❌ Fails | `Cancelled` | No |
-| Completion fails, void also fails | ❌ Fails | `NeedsAttention` | **Yes** |
+**Status transition messages.** Each `order_status_history` row could carry an optional `message` field — the payment provider's decline code on `PaymentDeclined`, the error type on `NeedsAttention`, a correlation ID on `Cancelled`. This makes the history self-contained for diagnostics and support triage without requiring a separate log query.
 
----
+**Rate limiting.** Without it, rapid duplicate checkout attempts on the same order can race. Needed for both data integrity and abuse protection.
 
-## Future Improvements
-
-- **`NeedsAttention` alerting:** The right architecture depends on who is resolving the order.
-  - **Human agents:** A `GET /orders?status=NeedsAttention` endpoint feeds a support queue. A recurring async job (e.g. every 30 seconds) polls and assigns cases. This is sufficient because if manual resolution happens on human timescales, polling latency is negligible.
-  - **Automated agents:** A pub-sub model should push directly onto an event queue for assignment. Resolution can be monitored via secondary agent using the order statuses table mentioned above or a similar table for support tickets.
-- **Rate limiting / usage enforcement:** Prevent race conditions from rapid duplicate checkout attempts; preserve data integrity and protect against abuse.
-- **Status transition messages:** Each entry in `order_status_history` could carry an optional message field capturing the reason for the transition — e.g. the payment provider's decline code on `PaymentDeclined`, the error type on `NeedsAttention`, or a correlation ID on `Cancelled`. This would make the history self-contained for diagnostics and support triage without requiring a separate log query.
+**Additional intermediate states.** The `VALID_TRANSITIONS` table was designed to accommodate these without changes to business logic — a new state requires only a new entry in the table:
+- `FraudReview` — flagged by a risk model; blocks checkout pending manual or automated clearance.
+- `RateLimited` — too many attempts in a short window; blocks until cooldown expires.
+- `InventoryHold` — tickets reserved but not yet confirmed available; checkout paused until the hold resolves or times out.
+- `AwaitingExternalConfirmation` — payment authorized but completion is waiting on an async callback (e.g. a 3DS challenge or a slow downstream ACK).
+- `OrderExpired` — initialized but not checked out within an allowed window; terminal state that prevents fulfillment of stale orders.
+- `PromotionExpired` — promotional price applied at initialization is no longer valid at checkout; blocks completion and prompts re-pricing before retry.
