@@ -44,8 +44,8 @@ A small service that models an order state machine with stage-dependent failure 
 
 **Methods**
 
-`private fulfill(): void`
-> Fulfills the order by transferring the tickets.
+`private complete(): void`
+> Completes the order by transferring the tickets.
 
 ---
 
@@ -61,18 +61,18 @@ LogStatus(Status::Initialized)
 try:
   payment.authorize()
   LogStatus(Status::PaymentAuthorized)  // only reached if authorize() succeeds
-  this.fulfill()
+  this.complete()
 
 catch (e):
   case PaymentDeclined:
     LogStatus(Status::PaymentDeclined)
     return Status::PaymentDeclined
 
-  case FulfillmentFailed:
+  case CompletionFailed:
     try:
       payment.void()
-      LogStatus(Status::FulfillmentFailed)
-      return Status::FulfillmentFailed
+      LogStatus(Status::Cancelled)
+      return Status::Cancelled
     catch (e):
       LogStatus(Status::NeedsAttention)
       return Status::NeedsAttention
@@ -119,9 +119,9 @@ return getTransactions().latest()?.status ?? Status::Pending
 | `Pending` | Order initialized, not yet processed |
 | `PaymentAuthorized` | Payment successfully authorized |
 | `PaymentDeclined` | Payment authorization failed |
-| `FulfillmentFailed` | Completion failed; payment voided |
+| `Cancelled` | Completion failed; payment voided |
 | `NeedsAttention` | Completion failed and void also failed |
-| `OrderComplete` | Order successfully fulfilled |
+| `OrderComplete` | Order successfully completeed |
 
 ---
 
@@ -148,7 +148,7 @@ Returns the current status and full status history for the given order.
 ## Assumptions
 
 - **Inventory management is out of scope.** The service assumes tickets are available and allocatable. Availability checks, seat reservation, and inventory locking against concurrent buyers are not modeled.
-- **Fulfillment is hand-waved.** `Order.fulfill()` is a stub representing a call to a downstream ticketing service. The mechanics of ticket transfer (API calls, retries, idempotency keys) are outside the scope of this assessment.
+- **Completion is hand-waved.** `Order.complete()` is a stub representing a call to a downstream ticketing service. The mechanics of ticket transfer (API calls, retries, idempotency keys) are outside the scope of this assessment.
 - **`NeedsAttention` resolution is not implemented.** The service detects and flags orders that require manual intervention, but the mechanism for routing them to an agent or support queue is not built out. See Future Improvements for some proposed approaches.
 - **Distributed write race conditions are out of scope.** Concurrent checkout attempts on the same order (e.g. duplicate submissions or multi-instance deployments) are not guarded against. This would be addressed with a DB-level pessimistic lock: an atomic `INSERT ... SELECT` into a `checkout_locks` table that checks order existence and current status in a single statement, claimed at the start of `checkout()` and released in a `finally` block. A TTL column plus a background reaper (or a DB-native advisory lock with automatic release on connection drop) would handle abandoned locks in production.
 
@@ -160,7 +160,7 @@ Returns the current status and full status history for the given order.
 
 - **`currentState` as first-class field (single-instance):** Safe under single-instance in-memory operation. A multi-instance deployment would require optimistic locking or a distributed lock to prevent race conditions on state transitions.
 
-- **Serialized payment + fulfillment processing:** Serializing payment authorization and order completion preserves transaction integrity at the cost of some latency. This tradeoff is justified because transaction integrity is a critical business concern, while the latency impact is minimal and has no effect on system integrity, trust, or complexity.
+- **Serialized payment + completement processing:** Serializing payment authorization and order completion preserves transaction integrity at the cost of some latency. This tradeoff is justified because transaction integrity is a critical business concern, while the latency impact is minimal and has no effect on system integrity, trust, or complexity.
 
 ---
 
@@ -170,11 +170,11 @@ Returns the current status and full status history for the given order.
 
 | Scenario | `ExecuteTransaction` result | Final status | Alert fires? |
 |---|---|---|---|
-| Valid order, payment authorized, fulfillment succeeds | ✅ Succeeds | `OrderComplete` | No |
+| Valid order, payment authorized, completement succeeds | ✅ Succeeds | `OrderComplete` | No |
 | Invalid order | ❌ Fails | `Pending` (rejected at validation) | No |
 | Payment authorization fails | ❌ Fails | `PaymentDeclined` | No |
-| Fulfillment fails, void succeeds | ❌ Fails | `FulfillmentFailed` | No |
-| Fulfillment fails, void also fails | ❌ Fails | `NeedsAttention` | **Yes** |
+| Completion fails, void succeeds | ❌ Fails | `Cancelled` | No |
+| Completion fails, void also fails | ❌ Fails | `NeedsAttention` | **Yes** |
 
 ---
 

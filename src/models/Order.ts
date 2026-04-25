@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import OrderStatus from './OrderStatus'
 import PaymentMethod from './PaymentMethod'
-import { PaymentDeclinedError, FulfillmentFailedError, PaymentUnvoidableError } from '../errors'
+import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError } from '../errors'
 import { getDb } from '../database'
 // Circular import with db.ts is intentional and safe: both modules only reference
 // each other inside function bodies, so CommonJS resolves both before any function runs.
@@ -57,8 +57,8 @@ class Order {
     return rows.map(r => ({ status: r.status as OrderStatus, createdAt: new Date(r.created_at) }))
   }
 
-  async fulfill(): Promise<void> {
-    throwIfSimulated('FulfillmentFailedError')
+  async complete(): Promise<void> {
+    throwIfSimulated('CompletionFailedError')
   }
 
   async checkout(payment: PaymentMethod, paymentId: string): Promise<OrderStatus> {
@@ -68,17 +68,17 @@ class Order {
     try {
       await payment.authorize()
       await this.logStatus(OrderStatus.PaymentAuthorized)
-      await this.fulfill()
+      await this.complete()
     } catch (e) {
       if (e instanceof PaymentDeclinedError) {
         await this.logStatus(OrderStatus.PaymentDeclined)
         return OrderStatus.PaymentDeclined
       }
-      if (e instanceof FulfillmentFailedError) {
+      if (e instanceof CompletionFailedError) {
         try {
           await payment.void()
-          await this.logStatus(OrderStatus.FulfillmentFailed)
-          return OrderStatus.FulfillmentFailed
+          await this.logStatus(OrderStatus.Cancelled)
+          return OrderStatus.Cancelled
         } catch (voidError) {
           if (!(voidError instanceof PaymentUnvoidableError)) throw voidError
           await this.logStatus(OrderStatus.NeedsAttention)

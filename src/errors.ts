@@ -5,10 +5,10 @@ export class PaymentDeclinedError extends Error {
   }
 }
 
-export class FulfillmentFailedError extends Error {
-  constructor(message = 'Fulfillment failed') {
+export class CompletionFailedError extends Error {
+  constructor(message = 'Completion failed') {
     super(message)
-    this.name = 'FulfillmentFailedError'
+    this.name = 'CompletionFailedError'
   }
 }
 

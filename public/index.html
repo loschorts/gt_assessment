@@ -142,7 +142,7 @@
     .badge-PaymentAuthorized { background: #1e3a5f; color: #89dceb; }
     .badge-Complete          { background: #1e3a2e; color: #a6e3a1; }
     .badge-PaymentDeclined   { background: #3b1e1e; color: #f38ba8; }
-    .badge-FulfillmentFailed { background: #3b2e1e; color: #fab387; }
+    .badge-Cancelled { background: #3b2e1e; color: #fab387; }
     .badge-NeedsAttention    { background: #3b1e3b; color: #f5c2e7; }
     .badge-Uninitialized     { background: #1e1e2e; color: #585b70; }
     .badge-claimed           { background: #1e3a2e; color: #a6e3a1; }
@@ -343,8 +343,8 @@
 
     const SIMULATABLE_ERRORS = [
       { name: 'PaymentDeclinedError',   desc: 'authorize() throws → PaymentDeclined' },
-      { name: 'FulfillmentFailedError', desc: 'fulfill() throws → FulfillmentFailed (or NeedsAttention if combined below)' },
-      { name: 'PaymentUnvoidableError', desc: 'void() throws → NeedsAttention (combine with FulfillmentFailedError)' },
+      { name: 'CompletionFailedError', desc: 'complete() throws → Cancelled (or NeedsAttention if combined below)' },
+      { name: 'PaymentUnvoidableError', desc: 'void() throws → NeedsAttention (combine with CompletionFailedError)' },
     ]
 
     function SimulationPanel() {

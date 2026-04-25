@@ -3,7 +3,7 @@ enum OrderStatus {
   Initialized = 'Initialized',
   PaymentAuthorized = 'PaymentAuthorized',
   PaymentDeclined = 'PaymentDeclined',
-  FulfillmentFailed = 'FulfillmentFailed',
+  Cancelled = 'Cancelled',
   NeedsAttention = 'NeedsAttention',
   Complete = 'Complete',
 }
