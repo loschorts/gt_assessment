@@ -183,5 +183,5 @@ Returns the current status and full status history for the given order.
 
 - **`NeedsAttention` alerting:** The right architecture depends on who is resolving the order.
   - **Human agents:** A `GET /orders?status=NeedsAttention` endpoint feeds a support queue. A recurring async job (e.g. every 30 seconds) polls and assigns cases. This is sufficient because if manual resolution happens on human timescales, polling latency is negligible.
-  - **Automated agents:** A pub-sub model should push directly onto an event queue (e.g. SQS, Kafka). A consumer picks it up in milliseconds, matching the resolution speed of an automated agent.
+  - **Automated agents:** A pub-sub model should push directly onto an event queue (e.g. SQS, Kafka). Assignment and resolution can be monitored via secondary agent using the order statuses table. 
 - **Rate limiting / usage enforcement:** Prevent race conditions from rapid duplicate checkout attempts; preserve data integrity and protect against abuse.
