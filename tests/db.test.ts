@@ -12,7 +12,7 @@ async function makeOrder(): Promise<Order> {
 beforeEach(async () => db.clearAll())
 
 describe('claimCheckout()', () => {
-  test('succeeds for a Pending order', async () => {
+  test('succeeds for an Initialized order', async () => {
     const order = await makeOrder()
     const result = await db.claimCheckout(order.id)
     expect(result).toEqual({ ok: true, order })
@@ -31,9 +31,9 @@ describe('claimCheckout()', () => {
     expect(second).toEqual({ ok: false, reason: 'conflict' })
   })
 
-  test('returns conflict when the order is no longer Pending', async () => {
+  test('returns conflict when the order is no longer Initialized', async () => {
     const order = await makeOrder()
-    await order.logStatus(OrderStatus.OrderComplete)
+    await order.logStatus(OrderStatus.Complete)
 
     const result = await db.claimCheckout(order.id)
     expect(result).toEqual({ ok: false, reason: 'conflict' })

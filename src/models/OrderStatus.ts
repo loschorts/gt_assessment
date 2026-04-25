@@ -1,10 +1,11 @@
 enum OrderStatus {
-  Pending = 'Pending',
+  Uninitialized = 'Uninitialized',
+  Initialized = 'Initialized',
   PaymentAuthorized = 'PaymentAuthorized',
   PaymentDeclined = 'PaymentDeclined',
   FulfillmentFailed = 'FulfillmentFailed',
   NeedsAttention = 'NeedsAttention',
-  OrderComplete = 'OrderComplete',
+  Complete = 'Complete',
 }
 
 export default OrderStatus

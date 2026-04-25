@@ -29,7 +29,7 @@ class Order {
   }
 
   async initialize(): Promise<void> {
-    await this.logStatus(OrderStatus.Pending)
+    await this.logStatus(OrderStatus.Initialized)
   }
 
   async getStatus(): Promise<OrderStatus> {
@@ -38,7 +38,7 @@ class Order {
       'SELECT status FROM order_status_history WHERE order_id = ? ORDER BY id DESC LIMIT 1',
       this.id
     )
-    return (row?.status as OrderStatus) ?? OrderStatus.Pending
+    return (row?.status as OrderStatus) ?? OrderStatus.Uninitialized
   }
 
   async getStatusHistory(): Promise<StatusHistoryEntry[]> {
@@ -78,8 +78,8 @@ class Order {
       throw e
     }
 
-    await this.logStatus(OrderStatus.OrderComplete)
-    return OrderStatus.OrderComplete
+    await this.logStatus(OrderStatus.Complete)
+    return OrderStatus.Complete
   }
 }
 

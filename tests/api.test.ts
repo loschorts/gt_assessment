@@ -18,14 +18,14 @@ beforeEach(async () => {
 // ─── POST /orders ──────────────────────────────────────────────────────────────
 
 describe('POST /orders', () => {
-  test('creates order with valid params → 201 Pending', async () => {
+  test('creates order with valid params → 201 Initialized', async () => {
     const res = await request(app)
       .post('/orders')
       .send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
 
     expect(res.status).toBe(201)
     expect(res.body.orderId).toBeDefined()
-    expect(res.body.status).toBe(OrderStatus.Pending)
+    expect(res.body.status).toBe(OrderStatus.Initialized)
   })
 
   test('invalid order — missing clientId → 400', async () => {
@@ -63,7 +63,7 @@ describe('POST /orders/:orderId/checkout — README validation test cases', () =
     return res.body.orderId as string
   }
 
-  test('valid order — payment authorized, fulfillment succeeds → OrderComplete', async () => {
+  test('valid order — payment authorized, fulfillment succeeds → Complete', async () => {
     const orderId = await createOrder()
 
     const res = await request(app)
@@ -71,7 +71,7 @@ describe('POST /orders/:orderId/checkout — README validation test cases', () =
       .send({ paymentId: 'pay-123' })
 
     expect(res.status).toBe(200)
-    expect(res.body.status).toBe(OrderStatus.OrderComplete)
+    expect(res.body.status).toBe(OrderStatus.Complete)
     expect(res.body.transactionId).toBeDefined()
   })
 
@@ -159,12 +159,12 @@ describe('GET /orders/:orderId/status', () => {
 
     expect(res.status).toBe(200)
     expect(res.body.orderId).toBe(orderId)
-    expect(res.body.status).toBe(OrderStatus.OrderComplete)
+    expect(res.body.status).toBe(OrderStatus.Complete)
     expect(Array.isArray(res.body.history)).toBe(true)
     expect(res.body.history.length).toBeGreaterThan(0)
   })
 
-  test('returns Pending before checkout', async () => {
+  test('returns Initialized before checkout', async () => {
     const createRes = await request(app)
       .post('/orders')
       .send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
@@ -172,7 +172,7 @@ describe('GET /orders/:orderId/status', () => {
     const res = await request(app).get(`/orders/${createRes.body.orderId}/status`)
 
     expect(res.status).toBe(200)
-    expect(res.body.status).toBe(OrderStatus.Pending)
+    expect(res.body.status).toBe(OrderStatus.Initialized)
   })
 
   test('unknown order → 404', async () => {

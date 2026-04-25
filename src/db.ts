@@ -7,7 +7,7 @@ export type ClaimCheckoutResult =
   | { ok: true; order: Order }
   | { ok: false; reason: 'not_found' | 'conflict' }
 
-// Atomically checks that the order exists, is Pending, and is not already locked,
+// Atomically checks that the order exists, is Initialized, and is not already locked,
 // then claims the lock via a single INSERT ... SELECT statement (atomic in SQLite).
 //
 // The lock row persists until releaseCheckout() is called explicitly. In production
@@ -29,7 +29,7 @@ export async function claimCheckout(orderId: string): Promise<ClaimCheckoutResul
        AND NOT EXISTS (
          SELECT 1 FROM checkout_locks cl WHERE cl.order_id = o.id
        )`,
-    orderId, OrderStatus.Pending
+    orderId, OrderStatus.Initialized
   )
 
   if ((result.changes ?? 0) === 0) {

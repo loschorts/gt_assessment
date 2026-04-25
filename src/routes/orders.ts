@@ -63,7 +63,7 @@ router.post('/:orderId/checkout', async (req: Request, res: Response) => {
       fireAlert(orderId)
     }
 
-    const httpStatus = status === OrderStatus.OrderComplete ? 200 : 422
+    const httpStatus = status === OrderStatus.Complete ? 200 : 422
     return res.status(httpStatus).json({ status, transactionId: transaction.id })
   } finally {
     await db.releaseCheckout(orderId)

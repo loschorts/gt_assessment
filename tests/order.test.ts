@@ -25,16 +25,16 @@ describe('Order', () => {
   afterEach(() => jest.restoreAllMocks())
 
   describe('getStatus()', () => {
-    test('returns Pending before any checkout', async () => {
-      expect(await order.getStatus()).toBe(OrderStatus.Pending)
+    test('returns Initialized before any checkout', async () => {
+      expect(await order.getStatus()).toBe(OrderStatus.Initialized)
     })
   })
 
   describe('checkout() — README validation test cases', () => {
-    test('payment authorized and fulfillment succeeds → OrderComplete', async () => {
+    test('payment authorized and fulfillment succeeds → Complete', async () => {
       const status = await order.checkout(payment)
-      expect(status).toBe(OrderStatus.OrderComplete)
-      expect(await order.getStatus()).toBe(OrderStatus.OrderComplete)
+      expect(status).toBe(OrderStatus.Complete)
+      expect(await order.getStatus()).toBe(OrderStatus.Complete)
     })
 
     test('payment authorization fails → PaymentDeclined', async () => {
@@ -67,11 +67,11 @@ describe('Order', () => {
   })
 
   describe('statusHistory', () => {
-    test('records PaymentAuthorized before OrderComplete on success', async () => {
+    test('records PaymentAuthorized before Complete on success', async () => {
       await order.checkout(payment)
       const statuses = (await order.getStatusHistory()).map(e => e.status)
       expect(statuses).toContain(OrderStatus.PaymentAuthorized)
-      expect(statuses.at(-1)).toBe(OrderStatus.OrderComplete)
+      expect(statuses.at(-1)).toBe(OrderStatus.Complete)
     })
 
     test('does not record PaymentAuthorized when payment is declined', async () => {
