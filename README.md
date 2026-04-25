@@ -63,6 +63,7 @@ if !canTransition(currentStatus, OrderStatus::Complete):
 
 try:
   payment.authorize()
+  LogStatus(OrderStatus::PaymentAuthorized)
   this.tryComplete()
 
 catch (e):
@@ -108,6 +109,7 @@ return row.status
 | Value | Description |
 |---|---|
 | `Initialized` | Order created, not yet checked out |
+| `PaymentAuthorized` | Payment authorized; completion in progress |
 | `PaymentDeclined` | Payment authorization failed |
 | `Cancelled` | Completion failed; payment voided |
 | `NeedsAttention` | Completion failed and void also failed |
@@ -151,6 +153,8 @@ Returns the current status and full status history for the given order.
 - **`currentState` as first-class field (single-instance):** Safe under single-instance in-memory operation. A multi-instance deployment would require optimistic locking or a distributed lock to prevent race conditions on state transitions.
 
 - **Serialized payment + completement processing:** Serializing payment authorization and order completion preserves transaction integrity at the cost of some latency. This tradeoff is justified because transaction integrity is a critical business concern, while the latency impact is minimal and has no effect on system integrity, trust, or complexity.
+
+- **`PaymentAuthorized` is a transitional status logged for diagnostic value:** Authorization is recorded as a discrete status entry immediately before completion is attempted. This gives the status history a complete audit trail of each checkout attempt. Without this entry, a resolving agent would have to query the payment provider directly to determine whether a charge is outstanding. With it, the history alone confirms that authorization succeeded. `PaymentAuthorized` is not a stable resting state: in the normal flow the order moves through it immediately to `Complete`, `Cancelled`, or `NeedsAttention` within the same request. On a retry, a fresh authorization is always started regardless of any prior `PaymentAuthorized` entry — resuming a stale authorization would risk acting on a charge that may have already expired or been reversed by the provider.
 
 - **Explicit transition table (`VALID_TRANSITIONS`):** Rather than encoding checkout eligibility as a single guard (`if status === Complete, reject`), valid transitions are declared as a data structure in `OrderStatus.ts`. `Order.tryCheckout()` consults the table rather than implementing ad-hoc logic. This makes the state machine auditable at a glance and keeps new states cheap to add — a new state only requires an entry in the table, not changes scattered across business logic. Some intermediate states that would justify this extensibility:
   - **`FraudReview`** — order flagged by a risk model during authorization; checkout blocked pending a manual or automated clearance step before re-attempting payment.

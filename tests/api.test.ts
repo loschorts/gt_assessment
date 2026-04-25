@@ -331,13 +331,13 @@ describe('GET /orders/:orderId/status', () => {
     })
   })
 
-  test('history sequence on success: Initialized → Complete', async () => {
+  test('history sequence on success: Initialized → PaymentAuthorized → Complete', async () => {
     const { body: { orderId } } = await request(app).post('/orders').send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
     await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
 
     const res = await request(app).get(`/orders/${orderId}/status`)
     expect(res.body.history.map((e: { status: string }) => e.status)).toEqual([
-      OrderStatus.Initialized, OrderStatus.Complete,
+      OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.Complete,
     ])
   })
 
@@ -352,18 +352,18 @@ describe('GET /orders/:orderId/status', () => {
     ])
   })
 
-  test('history sequence on Cancelled: Initialized → Cancelled', async () => {
+  test('history sequence on Cancelled: Initialized → PaymentAuthorized → Cancelled', async () => {
     jest.spyOn(Order.prototype, 'tryComplete').mockRejectedValue(new CompletionFailedError())
     const { body: { orderId } } = await request(app).post('/orders').send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
     await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
 
     const res = await request(app).get(`/orders/${orderId}/status`)
     expect(res.body.history.map((e: { status: string }) => e.status)).toEqual([
-      OrderStatus.Initialized, OrderStatus.Cancelled,
+      OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.Cancelled,
     ])
   })
 
-  test('history sequence on NeedsAttention: Initialized → NeedsAttention', async () => {
+  test('history sequence on NeedsAttention: Initialized → PaymentAuthorized → NeedsAttention', async () => {
     jest.spyOn(Order.prototype, 'tryComplete').mockRejectedValue(new CompletionFailedError())
     jest.spyOn(PaymentMethod.prototype, 'void').mockRejectedValue(new PaymentUnvoidableError())
     const { body: { orderId } } = await request(app).post('/orders').send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
@@ -371,7 +371,7 @@ describe('GET /orders/:orderId/status', () => {
 
     const res = await request(app).get(`/orders/${orderId}/status`)
     expect(res.body.history.map((e: { status: string }) => e.status)).toEqual([
-      OrderStatus.Initialized, OrderStatus.NeedsAttention,
+      OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.NeedsAttention,
     ])
   })
 

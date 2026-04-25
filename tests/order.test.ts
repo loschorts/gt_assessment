@@ -125,10 +125,10 @@ describe('Order', () => {
       expect(statuses.at(-1)).toBe(OrderStatus.Cancelled)
     })
 
-    test('full sequence on success: Initialized → Complete', async () => {
+    test('full sequence on success: Initialized → PaymentAuthorized → Complete', async () => {
       await order.tryCheckout(payment, 'pay-test')
       const statuses = (await order.getStatusHistory()).map(e => e.status)
-      expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.Complete])
+      expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.Complete])
     })
 
     test('full sequence on payment declined: Initialized → PaymentDeclined', async () => {
@@ -138,19 +138,19 @@ describe('Order', () => {
       expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.PaymentDeclined])
     })
 
-    test('full sequence on Cancelled: Initialized → Cancelled', async () => {
+    test('full sequence on Cancelled: Initialized → PaymentAuthorized → Cancelled', async () => {
       completeSpy.mockRejectedValue(new CompletionFailedError())
       await order.tryCheckout(payment, 'pay-test')
       const statuses = (await order.getStatusHistory()).map(e => e.status)
-      expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.Cancelled])
+      expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.Cancelled])
     })
 
-    test('full sequence on NeedsAttention: Initialized → NeedsAttention', async () => {
+    test('full sequence on NeedsAttention: Initialized → PaymentAuthorized → NeedsAttention', async () => {
       completeSpy.mockRejectedValue(new CompletionFailedError())
       voidSpy.mockRejectedValue(new PaymentUnvoidableError())
       await order.tryCheckout(payment, 'pay-test')
       const statuses = (await order.getStatusHistory()).map(e => e.status)
-      expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.NeedsAttention])
+      expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.NeedsAttention])
     })
 
     test('each history entry has a createdAt timestamp', async () => {

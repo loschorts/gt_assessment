@@ -73,6 +73,7 @@ class Order {
 
     try {
       await payment.authorize()
+      await this.logStatus(OrderStatus.PaymentAuthorized)
       await this.tryComplete()
     } catch (e) {
       if (e instanceof PaymentDeclinedError) {

@@ -1,5 +1,6 @@
 enum OrderStatus {
   Initialized = 'Initialized',
+  PaymentAuthorized = 'PaymentAuthorized',
   PaymentDeclined = 'PaymentDeclined',
   Cancelled = 'Cancelled',
   NeedsAttention = 'NeedsAttention',
@@ -16,8 +17,9 @@ const CHECKOUT_OUTCOMES: OrderStatus[] = [
 ]
 
 export const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  [OrderStatus.Initialized]:     CHECKOUT_OUTCOMES,
-  [OrderStatus.PaymentDeclined]: CHECKOUT_OUTCOMES,
+  [OrderStatus.Initialized]:       CHECKOUT_OUTCOMES,
+  [OrderStatus.PaymentAuthorized]: CHECKOUT_OUTCOMES,
+  [OrderStatus.PaymentDeclined]:   CHECKOUT_OUTCOMES,
   [OrderStatus.Cancelled]:       CHECKOUT_OUTCOMES,
   [OrderStatus.NeedsAttention]:  TERMINAL,
   [OrderStatus.Complete]:        TERMINAL,
