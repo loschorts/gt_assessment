@@ -58,7 +58,7 @@ LogStatus(OrderStatus::Initialized)
 
 `tryCheckout(payment: PaymentMethod, paymentId: string) -> OrderStatus`
 ```
-if !canTransition(currentStatus, OrderStatus::Complete):
+if !canTransition(currentStatus, OrderStatus::PaymentAuthorized):
   throw InvalidTransitionError
 
 try:
@@ -161,6 +161,8 @@ Returns the current status and full status history for the given order.
   - **`RateLimited`** — too many checkout attempts in a short window; blocks further attempts until a cooldown expires, protecting against both accidental duplicate submissions and intentional abuse.
   - **`InventoryHold`** — tickets reserved but not yet confirmed available by the downstream ticketing service; checkout paused until the hold resolves or times out.
   - **`AwaitingExternalConfirmation`** — payment authorized but completion is waiting on an async callback (e.g. a 3DS challenge or a slow downstream ACK); order held in limbo until confirmation arrives.
+  - **`OrderExpired`** — order was initialized but not checked out within an allowed window; terminal state that prevents stale orders from being fulfilled long after the customer's intent has lapsed.
+  - **`PromotionExpired`** — a discount or promotional price applied at initialization is no longer valid at checkout time; blocks completion and prompts the customer to re-price the order before retrying.
 
 ---
 

@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
-import OrderStatus, { canTransition } from './OrderStatus'
+import OrderStatus, { assertTransition } from './OrderStatus'
 import PaymentMethod from './PaymentMethod'
-import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError, InvalidTransitionError, OrderNotInitializedError } from '../errors'
+import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError, OrderNotInitializedError } from '../errors'
 import { getDb } from '../database'
 // Circular import with db.ts is intentional and safe: both modules only reference
 // each other inside function bodies, so CommonJS resolves both before any function runs.
@@ -62,40 +62,41 @@ class Order {
     throwIfSimulated(CompletionFailedError)
   }
 
+  private async transition(current: OrderStatus, next: OrderStatus): Promise<OrderStatus> {
+    assertTransition(current, next)
+    await this.logStatus(next)
+    return next
+  }
+
   async tryCheckout(payment: PaymentMethod, paymentId: string): Promise<OrderStatus> {
-    const currentStatus = await this.getStatus()
-    if (!canTransition(currentStatus, OrderStatus.Complete)) {
-      throw new InvalidTransitionError(currentStatus)
-    }
+    let currentStatus = await this.getStatus()
+    assertTransition(currentStatus, OrderStatus.PaymentAuthorized)
 
     this.paymentId = paymentId
     await db.savePaymentId(this.id, paymentId)
 
     try {
       await payment.authorize()
-      await this.logStatus(OrderStatus.PaymentAuthorized)
+      currentStatus = await this.transition(currentStatus, OrderStatus.PaymentAuthorized)
       await this.tryComplete()
     } catch (e) {
       if (e instanceof PaymentDeclinedError) {
-        await this.logStatus(OrderStatus.PaymentDeclined)
-        return OrderStatus.PaymentDeclined
+        return this.transition(currentStatus, OrderStatus.PaymentDeclined)
       }
       if (e instanceof CompletionFailedError) {
         try {
           await payment.void()
-          await this.logStatus(OrderStatus.Cancelled)
-          return OrderStatus.Cancelled
+          return this.transition(currentStatus, OrderStatus.Cancelled)
         } catch (voidError) {
-          await this.logStatus(OrderStatus.NeedsAttention)
+          const status = await this.transition(currentStatus, OrderStatus.NeedsAttention)
           if (!(voidError instanceof PaymentUnvoidableError)) throw voidError
-          return OrderStatus.NeedsAttention
+          return status
         }
       }
       throw e
     }
 
-    await this.logStatus(OrderStatus.Complete)
-    return OrderStatus.Complete
+    return this.transition(currentStatus, OrderStatus.Complete)
   }
 }
 
