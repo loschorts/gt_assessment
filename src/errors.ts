@@ -18,3 +18,17 @@ export class PaymentUnvoidableError extends Error {
     this.name = 'PaymentUnvoidableError'
   }
 }
+
+export class InvalidTransitionError extends Error {
+  constructor(public readonly currentStatus: string) {
+    super(`Cannot initiate checkout from status: ${currentStatus}`)
+    this.name = 'InvalidTransitionError'
+  }
+}
+
+export class OrderNotInitializedError extends Error {
+  constructor() {
+    super('Order has no status history — initialize() was never called')
+    this.name = 'OrderNotInitializedError'
+  }
+}

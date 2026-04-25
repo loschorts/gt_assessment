@@ -5,6 +5,7 @@ import PaymentMethod from '../models/PaymentMethod'
 import OrderStatus from '../models/OrderStatus'
 import * as db from '../db'
 import { fireAlert } from '../alerts'
+import { InvalidTransitionError, OrderNotInitializedError } from '../errors'
 
 const router = Router()
 
@@ -45,13 +46,20 @@ router.post('/:orderId/checkout', async (req: Request, res: Response) => {
   const order = await db.getOrder(orderId)
   if (!order) return res.status(404).json({ error: 'Order not found' })
 
-  const currentStatus = await order.getStatus()
-  if (currentStatus === OrderStatus.Complete) {
-    return res.status(409).json({ status: currentStatus })
-  }
-
   const payment = new PaymentMethod(order.clientId)
-  const status = await order.tryCheckout(payment, paymentId)
+
+  let status: OrderStatus
+  try {
+    status = await order.tryCheckout(payment, paymentId)
+  } catch (e) {
+    if (e instanceof InvalidTransitionError) {
+      return res.status(409).json({ status: e.currentStatus })
+    }
+    if (e instanceof OrderNotInitializedError) {
+      return res.status(404).json({ error: e.message })
+    }
+    throw e
+  }
 
   if (status === OrderStatus.NeedsAttention) {
     fireAlert(orderId)
@@ -70,11 +78,18 @@ router.get('/:orderId/status', async (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Order not found' })
   }
 
-  return res.json({
-    orderId,
-    status: await order.getStatus(),
-    history: await order.getStatusHistory(),
-  })
+  try {
+    return res.json({
+      orderId,
+      status: await order.getStatus(),
+      history: await order.getStatusHistory(),
+    })
+  } catch (e) {
+    if (e instanceof OrderNotInitializedError) {
+      return res.status(404).json({ error: e.message })
+    }
+    throw e
+  }
 })
 
 export default router

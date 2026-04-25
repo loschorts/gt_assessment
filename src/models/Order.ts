@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
-import OrderStatus from './OrderStatus'
+import OrderStatus, { canTransition } from './OrderStatus'
 import PaymentMethod from './PaymentMethod'
-import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError } from '../errors'
+import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError, InvalidTransitionError, OrderNotInitializedError } from '../errors'
 import { getDb } from '../database'
 // Circular import with db.ts is intentional and safe: both modules only reference
 // each other inside function bodies, so CommonJS resolves both before any function runs.
@@ -45,7 +45,8 @@ class Order {
       'SELECT status FROM order_status_history WHERE order_id = ? ORDER BY id DESC LIMIT 1',
       this.id
     )
-    return (row?.status as OrderStatus) ?? OrderStatus.Uninitialized
+    if (!row) throw new OrderNotInitializedError()
+    return row.status as OrderStatus
   }
 
   async getStatusHistory(): Promise<StatusHistoryEntry[]> {
@@ -62,6 +63,11 @@ class Order {
   }
 
   async tryCheckout(payment: PaymentMethod, paymentId: string): Promise<OrderStatus> {
+    const currentStatus = await this.getStatus()
+    if (!canTransition(currentStatus, OrderStatus.Complete)) {
+      throw new InvalidTransitionError(currentStatus)
+    }
+
     this.paymentId = paymentId
     await db.savePaymentId(this.id, paymentId)
 

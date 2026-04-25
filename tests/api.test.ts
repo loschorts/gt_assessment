@@ -207,7 +207,7 @@ describe('POST /orders/:orderId/checkout — order creation and state transition
     expect(res.status).not.toBe(409)
   })
 
-  test('re-checkout after NeedsAttention → allowed, not 409', async () => {
+  test('re-checkout after NeedsAttention → blocked, 409', async () => {
     jest.spyOn(Order.prototype, 'tryComplete').mockRejectedValueOnce(new CompletionFailedError())
     jest.spyOn(PaymentMethod.prototype, 'void').mockRejectedValueOnce(new PaymentUnvoidableError())
     const orderId = await createOrder()
@@ -217,7 +217,8 @@ describe('POST /orders/:orderId/checkout — order creation and state transition
       .post(`/orders/${orderId}/checkout`)
       .send({ paymentId: 'pay-2' })
 
-    expect(res.status).not.toBe(409)
+    expect(res.status).toBe(409)
+    expect(res.body.status).toBe(OrderStatus.NeedsAttention)
   })
 
   test('calls tryComplete when authorize succeeds', async () => {
