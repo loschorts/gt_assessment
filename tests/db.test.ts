@@ -4,7 +4,6 @@ import OrderStatus from '../src/models/OrderStatus'
 
 async function makeOrder(): Promise<Order> {
   const order = new Order('client-1', ['ticket-1'])
-  await db.createOrder(order)
   await order.initialize()
   return order
 }
@@ -62,7 +61,6 @@ describe('clearAll()', () => {
     await db.claimCheckout(order.id)
 
     await db.clearAll()
-    await db.createOrder(order)
     await order.initialize()
 
     const result = await db.claimCheckout(order.id)

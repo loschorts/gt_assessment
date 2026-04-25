@@ -1,4 +1,4 @@
-import * as db from '../src/db'
+import { clearAll } from '../src/db'
 import Order from '../src/models/Order'
 import PaymentMethod from '../src/models/PaymentMethod'
 import OrderStatus from '../src/models/OrderStatus'
@@ -12,9 +12,8 @@ describe('Order', () => {
   let fulfillSpy: jest.SpyInstance
 
   beforeEach(async () => {
-    await db.clearAll()
+    await clearAll()
     order = new Order('client-1', ['ticket-1', 'ticket-2'])
-    await db.createOrder(order)
     await order.initialize()
     payment = new PaymentMethod('client-1')
     authorizeSpy = jest.spyOn(payment, 'authorize').mockResolvedValue()

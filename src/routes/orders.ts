@@ -27,7 +27,6 @@ router.post('/', async (req: Request, res: Response) => {
 
   const { clientId, ticketIds } = result.data
   const order = new Order(clientId.trim(), ticketIds)
-  await db.createOrder(order)
   await order.initialize()
 
   return res.status(201).json({ orderId: order.id, status: await order.getStatus() })

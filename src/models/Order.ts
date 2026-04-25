@@ -3,6 +3,7 @@ import OrderStatus from './OrderStatus'
 import PaymentMethod from './PaymentMethod'
 import { PaymentDeclinedError, FulfillmentFailedError, PaymentUnvoidableError } from '../errors'
 import { getDb } from '../database'
+import * as db from '../db'
 
 export interface StatusHistoryEntry {
   status: OrderStatus
@@ -29,6 +30,7 @@ class Order {
   }
 
   async initialize(): Promise<void> {
+    await db.createOrder(this)
     await this.logStatus(OrderStatus.Initialized)
   }
 
