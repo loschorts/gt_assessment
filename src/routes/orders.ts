@@ -45,6 +45,11 @@ router.post('/:orderId/checkout', async (req: Request, res: Response) => {
   const order = await db.getOrder(orderId)
   if (!order) return res.status(404).json({ error: 'Order not found' })
 
+  const currentStatus = await order.getStatus()
+  if (currentStatus === OrderStatus.Complete) {
+    return res.status(409).json({ status: currentStatus })
+  }
+
   const payment = new PaymentMethod(order.clientId)
   const status = await order.tryCheckout(payment, paymentId)
 

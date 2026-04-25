@@ -4,7 +4,7 @@ import * as db from '../src/db'
 import Order from '../src/models/Order'
 import PaymentMethod from '../src/models/PaymentMethod'
 import OrderStatus from '../src/models/OrderStatus'
-import { PaymentDeclinedError, FulfillmentFailedError, PaymentUnvoidableError } from '../src/errors'
+import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError } from '../src/errors'
 
 beforeEach(async () => {
   await db.clearAll()
@@ -12,7 +12,7 @@ beforeEach(async () => {
   // Default: payment and fulfillment succeed
   jest.spyOn(PaymentMethod.prototype, 'authorize').mockResolvedValue()
   jest.spyOn(PaymentMethod.prototype, 'void').mockResolvedValue()
-  jest.spyOn(Order.prototype, 'fulfill').mockResolvedValue()
+  jest.spyOn(Order.prototype, 'tryComplete').mockResolvedValue()
 })
 
 // ─── POST /orders ──────────────────────────────────────────────────────────────
@@ -87,8 +87,8 @@ describe('POST /orders/:orderId/checkout — README validation test cases', () =
     expect(res.body.status).toBe(OrderStatus.PaymentDeclined)
   })
 
-  test('fulfillment fails, void succeeds → FulfillmentFailed', async () => {
-    jest.spyOn(Order.prototype, 'fulfill').mockRejectedValue(new FulfillmentFailedError())
+  test('completion fails, void succeeds → Cancelled', async () => {
+    jest.spyOn(Order.prototype, 'tryComplete').mockRejectedValue(new CompletionFailedError())
     const orderId = await createOrder()
 
     const res = await request(app)
@@ -96,11 +96,11 @@ describe('POST /orders/:orderId/checkout — README validation test cases', () =
       .send({ paymentId: 'pay-123' })
 
     expect(res.status).toBe(422)
-    expect(res.body.status).toBe(OrderStatus.FulfillmentFailed)
+    expect(res.body.status).toBe(OrderStatus.Cancelled)
   })
 
-  test('fulfillment fails, void also fails → NeedsAttention', async () => {
-    jest.spyOn(Order.prototype, 'fulfill').mockRejectedValue(new FulfillmentFailedError())
+  test('completion fails, void also fails → NeedsAttention', async () => {
+    jest.spyOn(Order.prototype, 'tryComplete').mockRejectedValue(new CompletionFailedError())
     jest.spyOn(PaymentMethod.prototype, 'void').mockRejectedValue(new PaymentUnvoidableError())
     const orderId = await createOrder()
 
