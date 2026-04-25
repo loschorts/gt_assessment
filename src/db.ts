@@ -1,61 +1,5 @@
 import Order from './models/Order'
-import OrderStatus from './models/OrderStatus'
 import { getDb } from './database'
-import { logLockEvent, clearLockEvents } from './debugLog'
-
-export type ClaimCheckoutResult =
-  | { ok: true; order: Order }
-  | { ok: false; reason: 'not_found' | 'conflict' }
-
-// Atomically checks that the order exists, is Initialized, and is not already locked,
-// then claims the lock via a single INSERT ... SELECT statement (atomic in SQLite).
-//
-// The lock row persists until releaseCheckout() is called explicitly. In production
-// you would add a TTL column and a background reaper (or use a DB-native advisory
-// lock with automatic release on connection drop), but that complexity is out of
-// scope for this assessment.
-export async function claimCheckout(orderId: string): Promise<ClaimCheckoutResult> {
-  const db = await getDb()
-
-  const result = await db.run(
-    `INSERT INTO checkout_locks (order_id)
-     SELECT o.id FROM orders o
-     WHERE o.id = ?
-       AND (
-         SELECT osh.status FROM order_status_history osh
-         WHERE osh.order_id = o.id
-         ORDER BY osh.id DESC LIMIT 1
-       ) = ?
-       AND NOT EXISTS (
-         SELECT 1 FROM checkout_locks cl WHERE cl.order_id = o.id
-       )`,
-    orderId, OrderStatus.Initialized
-  )
-
-  if ((result.changes ?? 0) === 0) {
-    const orderRow = await db.get('SELECT id FROM orders WHERE id = ?', orderId)
-    const reason = !orderRow ? 'not_found' : 'conflict'
-    logLockEvent({ type: 'conflict', orderId, conflictReason: reason })
-    return { ok: false, reason }
-  }
-
-  logLockEvent({ type: 'claimed', orderId })
-
-  const row = await db.get<{ id: string; client_id: string; ticket_ids: string; payment_id: string | null }>(
-    'SELECT id, client_id, ticket_ids, payment_id FROM orders WHERE id = ?',
-    orderId
-  )
-  const order = new Order(row!.client_id, JSON.parse(row!.ticket_ids))
-  order.id = row!.id
-  order.paymentId = row!.payment_id
-  return { ok: true, order }
-}
-
-export async function releaseCheckout(orderId: string): Promise<void> {
-  const db = await getDb()
-  await db.run('DELETE FROM checkout_locks WHERE order_id = ?', orderId)
-  logLockEvent({ type: 'released', orderId })
-}
 
 export async function createOrder(order: Order): Promise<Order> {
   const db = await getDb()
@@ -86,8 +30,6 @@ export async function getOrder(id: string): Promise<Order | null> {
 
 export async function clearAll(): Promise<void> {
   const db = await getDb()
-  await db.run('DELETE FROM checkout_locks')
   await db.run('DELETE FROM order_status_history')
   await db.run('DELETE FROM orders')
-  clearLockEvents()
 }

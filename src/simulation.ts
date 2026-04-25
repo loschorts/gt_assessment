@@ -1,4 +1,4 @@
-import { PaymentDeclinedError, FulfillmentFailedError, PaymentUnvoidableError, CheckoutConflictError } from './errors'
+import { PaymentDeclinedError, FulfillmentFailedError, PaymentUnvoidableError } from './errors'
 
 const active = new Set<string>()
 
@@ -17,6 +17,5 @@ export function throwIfSimulated(errorName: string): void {
     case 'PaymentDeclinedError':   throw new PaymentDeclinedError('Simulated')
     case 'FulfillmentFailedError': throw new FulfillmentFailedError('Simulated')
     case 'PaymentUnvoidableError': throw new PaymentUnvoidableError('Simulated')
-    case 'CheckoutConflictError':  throw new CheckoutConflictError('Simulated')
   }
 }

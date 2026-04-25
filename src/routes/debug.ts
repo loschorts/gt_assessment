@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express'
 import { getDb } from '../database'
-import { getLockEvents } from '../debugLog'
 import { getSimulatedErrors, setSimulatedErrors } from '../simulation'
 
 const router = Router()
@@ -8,7 +7,7 @@ const router = Router()
 router.get('/state', async (_req: Request, res: Response) => {
   const db = await getDb()
 
-  const [orders, statusHistory, locks] = await Promise.all([
+  const [orders, statusHistory] = await Promise.all([
     db.all(`
       SELECT o.id, o.client_id, o.ticket_ids, o.payment_id,
              (SELECT osh.status FROM order_status_history osh
@@ -16,10 +15,9 @@ router.get('/state', async (_req: Request, res: Response) => {
       FROM orders o ORDER BY rowid ASC
     `),
     db.all('SELECT * FROM order_status_history ORDER BY id ASC'),
-    db.all('SELECT * FROM checkout_locks'),
   ])
 
-  return res.json({ orders, statusHistory, locks, lockEvents: getLockEvents() })
+  return res.json({ orders, statusHistory })
 })
 
 router.get('/simulate', (_req: Request, res: Response) => {

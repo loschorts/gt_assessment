@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import OrderStatus from './OrderStatus'
 import PaymentMethod from './PaymentMethod'
-import { PaymentDeclinedError, FulfillmentFailedError, PaymentUnvoidableError, CheckoutConflictError } from '../errors'
+import { PaymentDeclinedError, FulfillmentFailedError, PaymentUnvoidableError } from '../errors'
 import { getDb } from '../database'
 // Circular import with db.ts is intentional and safe: both modules only reference
 // each other inside function bodies, so CommonJS resolves both before any function runs.
@@ -62,10 +62,6 @@ class Order {
   }
 
   async checkout(payment: PaymentMethod, paymentId: string): Promise<OrderStatus> {
-    throwIfSimulated('CheckoutConflictError')
-    const claim = await db.claimCheckout(this.id)
-    if (!claim.ok) throw new CheckoutConflictError()
-
     this.paymentId = paymentId
     await db.savePaymentId(this.id, paymentId)
 
@@ -90,8 +86,6 @@ class Order {
         }
       }
       throw e
-    } finally {
-      await db.releaseCheckout(this.id)
     }
 
     await this.logStatus(OrderStatus.Complete)

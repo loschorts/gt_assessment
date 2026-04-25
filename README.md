@@ -150,14 +150,13 @@ Returns the current status and full status history for the given order.
 - **Inventory management is out of scope.** The service assumes tickets are available and allocatable. Availability checks, seat reservation, and inventory locking against concurrent buyers are not modeled.
 - **Fulfillment is hand-waved.** `Order.fulfill()` is a stub representing a call to a downstream ticketing service. The mechanics of ticket transfer (API calls, retries, idempotency keys) are outside the scope of this assessment.
 - **`NeedsAttention` resolution is not implemented.** The service detects and flags orders that require manual intervention, but the mechanism for routing them to an agent or support queue is not built out. See Future Improvements for some proposed approaches.
+- **Distributed write race conditions are out of scope.** Concurrent checkout attempts on the same order (e.g. duplicate submissions or multi-instance deployments) are not guarded against. This would be addressed with a DB-level pessimistic lock: an atomic `INSERT ... SELECT` into a `checkout_locks` table that checks order existence and current status in a single statement, claimed at the start of `checkout()` and released in a `finally` block. A TTL column plus a background reaper (or a DB-native advisory lock with automatic release on connection drop) would handle abandoned locks in production.
 
 ---
 
 ## Decisions & Tradeoffs
 
 - **DB over in-memory storage:** The transaction log is the source of truth for order status. Accuracy is critical, and lookups remain fast with sensible indexing. In-memory caching is explicitly avoided to prevent stale state.
-
-- **Order-level lock:** An order-level `processing` flag is checked at the start of `checkout()` to prevent parallel edits to the same order.
 
 - **`currentState` as first-class field (single-instance):** Safe under single-instance in-memory operation. A multi-instance deployment would require optimistic locking or a distributed lock to prevent race conditions on state transitions.
 

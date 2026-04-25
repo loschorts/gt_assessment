@@ -5,7 +5,6 @@ import PaymentMethod from '../models/PaymentMethod'
 import OrderStatus from '../models/OrderStatus'
 import * as db from '../db'
 import { fireAlert } from '../alerts'
-import { CheckoutConflictError } from '../errors'
 
 const router = Router()
 
@@ -47,22 +46,14 @@ router.post('/:orderId/checkout', async (req: Request, res: Response) => {
   if (!order) return res.status(404).json({ error: 'Order not found' })
 
   const payment = new PaymentMethod(order.clientId)
+  const status = await order.checkout(payment, paymentId)
 
-  try {
-    const status = await order.checkout(payment, paymentId)
-
-    if (status === OrderStatus.NeedsAttention) {
-      fireAlert(orderId)
-    }
-
-    const httpStatus = status === OrderStatus.Complete ? 200 : 422
-    return res.status(httpStatus).json({ status })
-  } catch (e) {
-    if (e instanceof CheckoutConflictError) {
-      return res.status(409).json({ error: e.message })
-    }
-    throw e
+  if (status === OrderStatus.NeedsAttention) {
+    fireAlert(orderId)
   }
+
+  const httpStatus = status === OrderStatus.Complete ? 200 : 422
+  return res.status(httpStatus).json({ status })
 })
 
 // GET /orders/:orderId/status — Get Order Status

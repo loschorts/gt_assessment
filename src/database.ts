@@ -21,9 +21,6 @@ export async function getDb(): Promise<Database> {
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
 
-      CREATE TABLE IF NOT EXISTS checkout_locks (
-        order_id TEXT PRIMARY KEY
-      );
     `)
   }
   return _db

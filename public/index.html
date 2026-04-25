@@ -341,48 +341,10 @@
       )
     }
 
-    function LocksTable({ locks }) {
-      if (!locks.length) return <div className="empty">No active locks.</div>
-      return (
-        <table>
-          <thead>
-            <tr><th>locked orderId</th></tr>
-          </thead>
-          <tbody>
-            {locks.map(l => (
-              <tr key={l.order_id}><td title={l.order_id}>{l.order_id}</td></tr>
-            ))}
-          </tbody>
-        </table>
-      )
-    }
-
-    function LockHistoryTable({ events }) {
-      if (!events.length) return <div className="empty">No lock events yet.</div>
-      return (
-        <table>
-          <thead>
-            <tr><th>type</th><th>orderId</th><th>conflictReason</th><th>timestamp</th></tr>
-          </thead>
-          <tbody>
-            {events.map((e, i) => (
-              <tr key={i}>
-                <td><Badge status={e.type} /></td>
-                <td title={e.orderId}>{shortId(e.orderId)}</td>
-                <td>{e.conflictReason ?? '—'}</td>
-                <td>{e.timestamp}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )
-    }
-
     const SIMULATABLE_ERRORS = [
       { name: 'PaymentDeclinedError',   desc: 'authorize() throws → PaymentDeclined' },
       { name: 'FulfillmentFailedError', desc: 'fulfill() throws → FulfillmentFailed (or NeedsAttention if combined below)' },
       { name: 'PaymentUnvoidableError', desc: 'void() throws → NeedsAttention (combine with FulfillmentFailedError)' },
-      { name: 'CheckoutConflictError',  desc: 'checkout blocked immediately → 409' },
     ]
 
     function SimulationPanel() {
@@ -419,7 +381,7 @@
     }
 
     function App() {
-      const [dbState, setDbState] = useState({ orders: [], statusHistory: [], locks: [], lockEvents: [] })
+      const [dbState, setDbState] = useState({ orders: [], statusHistory: [] })
       const [lastResponse, setLastResponse] = useState(null)
       const [selectedOrderId, setSelectedOrderId] = useState(null)
 
@@ -473,15 +435,6 @@
               <StatusHistoryTable rows={dbState.statusHistory} />
             </div>
 
-            <div className="card table-section">
-              <h2>Checkout Locks ({dbState.locks.length})</h2>
-              <LocksTable locks={dbState.locks} />
-            </div>
-
-            <div className="card table-section">
-              <h2>Lock History ({dbState.lockEvents.length})</h2>
-              <LockHistoryTable events={dbState.lockEvents} />
-            </div>
           </div>
         </>
       )
