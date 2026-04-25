@@ -86,8 +86,8 @@ class Order {
           await this.logStatus(OrderStatus.Cancelled)
           return OrderStatus.Cancelled
         } catch (voidError) {
-          if (!(voidError instanceof PaymentUnvoidableError)) throw voidError
           await this.logStatus(OrderStatus.NeedsAttention)
+          if (!(voidError instanceof PaymentUnvoidableError)) throw voidError
           return OrderStatus.NeedsAttention
         }
       }
