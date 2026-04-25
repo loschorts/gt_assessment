@@ -1,4 +1,5 @@
 import { throwIfSimulated } from '../simulation'
+import { PaymentDeclinedError, PaymentUnvoidableError } from '../errors'
 
 // Stub for a third-party payment provider (e.g. Stripe). In production,
 // authorize() and void() would make authenticated API calls to that service.
@@ -11,12 +12,12 @@ class PaymentMethod {
 
   // Charges the payment method. Throws PaymentDeclinedError if the provider rejects it.
   async authorize(): Promise<void> {
-    throwIfSimulated('PaymentDeclinedError')
+    throwIfSimulated(PaymentDeclinedError)
   }
 
   // Reverses a previously authorized charge. Throws PaymentUnvoidableError if the provider cannot void it.
   async void(): Promise<void> {
-    throwIfSimulated('PaymentUnvoidableError')
+    throwIfSimulated(PaymentUnvoidableError)
   }
 }
 

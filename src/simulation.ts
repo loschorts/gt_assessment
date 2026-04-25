@@ -1,5 +1,7 @@
 import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError } from './errors'
 
+export type SimulatableError = typeof PaymentDeclinedError | typeof CompletionFailedError | typeof PaymentUnvoidableError
+
 const active = new Set<string>()
 
 export function setSimulatedErrors(errors: string[]): void {
@@ -11,11 +13,7 @@ export function getSimulatedErrors(): string[] {
   return [...active]
 }
 
-export function throwIfSimulated(errorName: string): void {
-  if (!active.has(errorName)) return
-  switch (errorName) {
-    case 'PaymentDeclinedError':   throw new PaymentDeclinedError('Simulated')
-    case 'CompletionFailedError': throw new CompletionFailedError('Simulated')
-    case 'PaymentUnvoidableError': throw new PaymentUnvoidableError('Simulated')
-  }
+export function throwIfSimulated(ErrorClass: SimulatableError): void {
+  if (!active.has(ErrorClass.name)) return
+  throw new ErrorClass('Simulated')
 }

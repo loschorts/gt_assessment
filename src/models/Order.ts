@@ -58,7 +58,7 @@ class Order {
   }
 
   async tryComplete(): Promise<void> {
-    throwIfSimulated('CompletionFailedError')
+    throwIfSimulated(CompletionFailedError)
   }
 
   async tryCheckout(payment: PaymentMethod, paymentId: string): Promise<OrderStatus> {
