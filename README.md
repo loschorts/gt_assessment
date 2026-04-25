@@ -145,13 +145,19 @@ Returns the current status and full status history for the given order.
 
 ---
 
+## Assumptions
+
+- **Inventory management is out of scope.** The service assumes tickets are available and allocatable. Availability checks, seat reservation, and inventory locking against concurrent buyers are not modeled.
+- **Fulfillment is hand-waved.** `Order.fulfill()` is a stub representing a call to a downstream ticketing service. The mechanics of ticket transfer (API calls, retries, idempotency keys) are outside the scope of this assessment.
+- **`NeedsAttention` resolution is not implemented.** The service detects and flags orders that require manual intervention, but the mechanism for routing them to an agent or support queue is not built out. See Future Improvements for some proposed approaches.
+
+---
+
 ## Decisions & Tradeoffs
 
 - **DB over in-memory storage:** The transaction log is the source of truth for order status. Accuracy is critical, and lookups remain fast with sensible indexing. In-memory caching is explicitly avoided to prevent stale state.
 
 - **Order-level lock:** An order-level `processing` flag is checked at the start of `checkout()` to prevent parallel edits to the same order.
-
-- **`Needs Attention` alerting via polling, not pub-sub:** Since resolution is human-speed, the latency benefits of pub-sub are largely unrealized. An async job handler polls the transaction log periodically (e.g. every 10s) and updates a support ticket queue.
 
 - **`currentState` as first-class field (single-instance):** Safe under single-instance in-memory operation. A multi-instance deployment would require optimistic locking or a distributed lock to prevent race conditions on state transitions.
 
@@ -175,5 +181,7 @@ Returns the current status and full status history for the given order.
 
 ## Future Improvements
 
-- **`Needs Attention` alerting:** Expose a `GET /orders?status=NeedsAttention` endpoint that can be used to populate a ticketing / work queue for assigning agents to facilitate resolution. Ticket assignment can be a recurring async job at a relatively low interval (e.g. 30 seconds), since manual resolution implies human-speed agents. Faster assignment can be accomplished with in-line, pub-sub assignment if faster resolution agents (such as agentic AI) are required.  
+- **`NeedsAttention` alerting:** The right architecture depends on who is resolving the order.
+  - **Human agents:** A `GET /orders?status=NeedsAttention` endpoint feeds a support queue. A recurring async job (e.g. every 30 seconds) polls and assigns cases. This is sufficient because if manual resolution happens on human timescales, polling latency is negligible.
+  - **Automated agents:** A pub-sub model should push directly onto an event queue (e.g. SQS, Kafka). A consumer picks it up in milliseconds, matching the resolution speed of an automated agent.
 - **Rate limiting / usage enforcement:** Prevent race conditions from rapid duplicate checkout attempts; preserve data integrity and protect against abuse.
