@@ -182,6 +182,72 @@ describe('POST /orders/:orderId/checkout — order creation and state transition
 
     expect(res.status).toBe(409)
   })
+
+  test('re-checkout after PaymentDeclined → allowed, not 409', async () => {
+    jest.spyOn(PaymentMethod.prototype, 'authorize').mockRejectedValueOnce(new PaymentDeclinedError())
+    const orderId = await createOrder()
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-1' })
+
+    const res = await request(app)
+      .post(`/orders/${orderId}/checkout`)
+      .send({ paymentId: 'pay-2' })
+
+    expect(res.status).not.toBe(409)
+  })
+
+  test('re-checkout after Cancelled → allowed, not 409', async () => {
+    jest.spyOn(Order.prototype, 'tryComplete').mockRejectedValueOnce(new CompletionFailedError())
+    const orderId = await createOrder()
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-1' })
+
+    const res = await request(app)
+      .post(`/orders/${orderId}/checkout`)
+      .send({ paymentId: 'pay-2' })
+
+    expect(res.status).not.toBe(409)
+  })
+
+  test('re-checkout after NeedsAttention → allowed, not 409', async () => {
+    jest.spyOn(Order.prototype, 'tryComplete').mockRejectedValueOnce(new CompletionFailedError())
+    jest.spyOn(PaymentMethod.prototype, 'void').mockRejectedValueOnce(new PaymentUnvoidableError())
+    const orderId = await createOrder()
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-1' })
+
+    const res = await request(app)
+      .post(`/orders/${orderId}/checkout`)
+      .send({ paymentId: 'pay-2' })
+
+    expect(res.status).not.toBe(409)
+  })
+
+  test('calls tryComplete when authorize succeeds', async () => {
+    const completeSpy = jest.spyOn(Order.prototype, 'tryComplete')
+    const orderId = await createOrder()
+
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    expect(completeSpy).toHaveBeenCalledTimes(1)
+  })
+
+  test('calls void when completion fails', async () => {
+    jest.spyOn(Order.prototype, 'tryComplete').mockRejectedValue(new CompletionFailedError())
+    const voidSpy = jest.spyOn(PaymentMethod.prototype, 'void')
+    const orderId = await createOrder()
+
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    expect(voidSpy).toHaveBeenCalledTimes(1)
+  })
+
+  test('does not call void when payment is declined', async () => {
+    jest.spyOn(PaymentMethod.prototype, 'authorize').mockRejectedValue(new PaymentDeclinedError())
+    const voidSpy = jest.spyOn(PaymentMethod.prototype, 'void')
+    const orderId = await createOrder()
+
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    expect(voidSpy).not.toHaveBeenCalled()
+  })
 })
 
 // ─── GET /orders/:orderId/status ───────────────────────────────────────────────
@@ -220,5 +286,102 @@ describe('GET /orders/:orderId/status', () => {
   test('unknown order → 404', async () => {
     const res = await request(app).get('/orders/nonexistent/status')
     expect(res.status).toBe(404)
+  })
+
+  test('returns PaymentDeclined after payment failure', async () => {
+    jest.spyOn(PaymentMethod.prototype, 'authorize').mockRejectedValue(new PaymentDeclinedError())
+    const { body: { orderId } } = await request(app).post('/orders').send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    const res = await request(app).get(`/orders/${orderId}/status`)
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe(OrderStatus.PaymentDeclined)
+  })
+
+  test('returns Cancelled after completion failure', async () => {
+    jest.spyOn(Order.prototype, 'tryComplete').mockRejectedValue(new CompletionFailedError())
+    const { body: { orderId } } = await request(app).post('/orders').send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    const res = await request(app).get(`/orders/${orderId}/status`)
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe(OrderStatus.Cancelled)
+  })
+
+  test('returns NeedsAttention after void failure', async () => {
+    jest.spyOn(Order.prototype, 'tryComplete').mockRejectedValue(new CompletionFailedError())
+    jest.spyOn(PaymentMethod.prototype, 'void').mockRejectedValue(new PaymentUnvoidableError())
+    const { body: { orderId } } = await request(app).post('/orders').send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    const res = await request(app).get(`/orders/${orderId}/status`)
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe(OrderStatus.NeedsAttention)
+  })
+
+  test('history entries have status and createdAt fields', async () => {
+    const { body: { orderId } } = await request(app).post('/orders').send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    const res = await request(app).get(`/orders/${orderId}/status`)
+    res.body.history.forEach((entry: { status: unknown; createdAt: unknown }) => {
+      expect(entry.status).toBeDefined()
+      expect(entry.createdAt).toBeDefined()
+    })
+  })
+
+  test('history sequence on success: Initialized → Complete', async () => {
+    const { body: { orderId } } = await request(app).post('/orders').send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    const res = await request(app).get(`/orders/${orderId}/status`)
+    expect(res.body.history.map((e: { status: string }) => e.status)).toEqual([
+      OrderStatus.Initialized, OrderStatus.Complete,
+    ])
+  })
+
+  test('history sequence on payment declined: Initialized → PaymentDeclined', async () => {
+    jest.spyOn(PaymentMethod.prototype, 'authorize').mockRejectedValue(new PaymentDeclinedError())
+    const { body: { orderId } } = await request(app).post('/orders').send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    const res = await request(app).get(`/orders/${orderId}/status`)
+    expect(res.body.history.map((e: { status: string }) => e.status)).toEqual([
+      OrderStatus.Initialized, OrderStatus.PaymentDeclined,
+    ])
+  })
+
+  test('history sequence on Cancelled: Initialized → Cancelled', async () => {
+    jest.spyOn(Order.prototype, 'tryComplete').mockRejectedValue(new CompletionFailedError())
+    const { body: { orderId } } = await request(app).post('/orders').send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    const res = await request(app).get(`/orders/${orderId}/status`)
+    expect(res.body.history.map((e: { status: string }) => e.status)).toEqual([
+      OrderStatus.Initialized, OrderStatus.Cancelled,
+    ])
+  })
+
+  test('history sequence on NeedsAttention: Initialized → NeedsAttention', async () => {
+    jest.spyOn(Order.prototype, 'tryComplete').mockRejectedValue(new CompletionFailedError())
+    jest.spyOn(PaymentMethod.prototype, 'void').mockRejectedValue(new PaymentUnvoidableError())
+    const { body: { orderId } } = await request(app).post('/orders').send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    const res = await request(app).get(`/orders/${orderId}/status`)
+    expect(res.body.history.map((e: { status: string }) => e.status)).toEqual([
+      OrderStatus.Initialized, OrderStatus.NeedsAttention,
+    ])
+  })
+
+  test('history timestamps are chronologically non-decreasing', async () => {
+    const { body: { orderId } } = await request(app).post('/orders').send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    const res = await request(app).get(`/orders/${orderId}/status`)
+    const timestamps = res.body.history.map((e: { createdAt: string }) => new Date(e.createdAt).getTime())
+    for (let i = 1; i < timestamps.length; i++) {
+      expect(timestamps[i]).toBeGreaterThanOrEqual(timestamps[i - 1])
+    }
   })
 })

@@ -29,6 +29,41 @@ describe('Order', () => {
     })
   })
 
+  describe('tryCheckout() — method call behavior', () => {
+    test('calls authorize on checkout', async () => {
+      await order.tryCheckout(payment, 'pay-test')
+      expect(authorizeSpy).toHaveBeenCalledTimes(1)
+    })
+
+    test('calls tryComplete when authorize succeeds', async () => {
+      await order.tryCheckout(payment, 'pay-test')
+      expect(completeSpy).toHaveBeenCalledTimes(1)
+    })
+
+    test('does not call tryComplete when authorize fails', async () => {
+      authorizeSpy.mockRejectedValue(new PaymentDeclinedError())
+      await order.tryCheckout(payment, 'pay-test')
+      expect(completeSpy).not.toHaveBeenCalled()
+    })
+
+    test('calls void when completion fails', async () => {
+      completeSpy.mockRejectedValue(new CompletionFailedError())
+      await order.tryCheckout(payment, 'pay-test')
+      expect(voidSpy).toHaveBeenCalledTimes(1)
+    })
+
+    test('does not call void when authorize fails', async () => {
+      authorizeSpy.mockRejectedValue(new PaymentDeclinedError())
+      await order.tryCheckout(payment, 'pay-test')
+      expect(voidSpy).not.toHaveBeenCalled()
+    })
+
+    test('does not call void on success', async () => {
+      await order.tryCheckout(payment, 'pay-test')
+      expect(voidSpy).not.toHaveBeenCalled()
+    })
+  })
+
   describe('tryCheckout() — README validation test cases', () => {
     test('payment authorized and completion succeeds → Complete', async () => {
       const status = await order.tryCheckout(payment, 'pay-test')
@@ -90,12 +125,48 @@ describe('Order', () => {
       expect(statuses.at(-1)).toBe(OrderStatus.Cancelled)
     })
 
+    test('full sequence on success: Initialized → Complete', async () => {
+      await order.tryCheckout(payment, 'pay-test')
+      const statuses = (await order.getStatusHistory()).map(e => e.status)
+      expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.Complete])
+    })
+
+    test('full sequence on payment declined: Initialized → PaymentDeclined', async () => {
+      authorizeSpy.mockRejectedValue(new PaymentDeclinedError())
+      await order.tryCheckout(payment, 'pay-test')
+      const statuses = (await order.getStatusHistory()).map(e => e.status)
+      expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.PaymentDeclined])
+    })
+
+    test('full sequence on Cancelled: Initialized → Cancelled', async () => {
+      completeSpy.mockRejectedValue(new CompletionFailedError())
+      await order.tryCheckout(payment, 'pay-test')
+      const statuses = (await order.getStatusHistory()).map(e => e.status)
+      expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.Cancelled])
+    })
+
+    test('full sequence on NeedsAttention: Initialized → NeedsAttention', async () => {
+      completeSpy.mockRejectedValue(new CompletionFailedError())
+      voidSpy.mockRejectedValue(new PaymentUnvoidableError())
+      await order.tryCheckout(payment, 'pay-test')
+      const statuses = (await order.getStatusHistory()).map(e => e.status)
+      expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.NeedsAttention])
+    })
+
     test('each history entry has a createdAt timestamp', async () => {
       await order.tryCheckout(payment, 'pay-test')
       const history = await order.getStatusHistory()
       history.forEach(entry => {
         expect(entry.createdAt).toBeInstanceOf(Date)
       })
+    })
+
+    test('timestamps are chronologically non-decreasing', async () => {
+      await order.tryCheckout(payment, 'pay-test')
+      const history = await order.getStatusHistory()
+      for (let i = 1; i < history.length; i++) {
+        expect(history[i].createdAt.getTime()).toBeGreaterThanOrEqual(history[i - 1].createdAt.getTime())
+      }
     })
   })
 })
