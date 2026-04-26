@@ -191,7 +191,6 @@ Storing each transition as a new row rather than overwriting a `status` column o
 
 - **Troubleshooting `NeedsAttention` orders.** The full history shows exactly which statuses preceded it and when, giving a resolving agent a self-contained audit trail without querying external systems.
 - **Service health monitoring.** Aggregating across the table surfaces patterns that single-order views miss: a spike in `PaymentDeclined` may indicate a payment provider degradation; a spike in `NeedsAttention` points to a completion service outage; an elevated `Cancelled` rate suggests the void path is working but completion is unreliable.
-- **Optimistic locking trade-off.** A single `status` column makes check-and-set easy: `UPDATE orders SET status = ? WHERE id = ? AND status = ?` fails atomically if another writer got there first. The history table gives up that option — concurrent writes both succeed at the DB level, so preventing races requires an external lock instead. This is a real cost of the append-only design. A denormalized `status` column on `orders`, kept in sync with `order_status_history` inside a transaction, could recover optimistic locking without sacrificing the audit trail.
 
 #### Serialized payment + completion processing
 
