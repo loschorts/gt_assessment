@@ -1,6 +1,6 @@
 # Order State Machine
 
-A TypeScript/Express service modeling an order state machine with stage-dependent failure recovery and 
+A TypeScript/Express service modeling an order state machine with stage-dependent failure recovery and historical status logging.
 
 ---
 
@@ -196,8 +196,6 @@ zd
 **Richer transition definitions.** At production scale, the [`VALID_TRANSITIONS`](src/models/OrderStatus.ts#L27) table would need to express more than "from → to" edges. Guards (blocking a transition unless a runtime condition is met — e.g. order value below a fraud threshold, cooldown window elapsed) and side effects (actions that fire on entering a state — e.g. triggering an alert on `NeedsAttention`, releasing an inventory hold on `Cancelled`) would need to be co-located with the transitions they govern rather than scattered across calling code. At that point, a dedicated state machine library like XState is worth considering — it handles guards, entry/exit actions, async flows, and nested states as first-class concepts, and ships a visualizer that keeps the machine diagram in sync with the implementation.
 
 **Status transition messages.** Each `order_status_history` row could carry an optional `message` field — the payment provider's decline code on `PaymentDeclined`, the error type on `NeedsAttention`, a correlation ID on `Cancelled`. This makes the history self-contained for diagnostics and support triage without requiring a separate log query.
-
-**Rate limiting.** Without it, rapid duplicate checkout attempts on the same order can race. Needed for both data integrity and abuse protection.
 
 **Additional intermediate states.** The [`VALID_TRANSITIONS`](src/models/OrderStatus.ts#L27) table was designed to accommodate these without changes to business logic — a new state requires only a new entry in the table:
 - `FraudReview` — flagged by a risk model; blocks checkout pending manual or automated clearance.
