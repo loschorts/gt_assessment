@@ -195,7 +195,7 @@ Storing each transition as a new row rather than overwriting a `status` column o
 
 - **Troubleshooting `NeedsAttention` orders.** The full history shows exactly which statuses preceded it and when, giving a resolving agent a self-contained audit trail without querying external systems.
 - **Service health monitoring.** Aggregating across the table surfaces patterns that single-order views miss: a spike in `PaymentDeclined` may indicate a payment provider degradation; a spike in `NeedsAttention` points to a completion service outage; an elevated `Cancelled` rate suggests the void path is working but completion is unreliable.
-- **Optimistic locking trade-off.** A single `status` column makes check-and-set easy: `UPDATE orders SET status = ? WHERE id = ? AND status = ?` fails atomically if another writer got there first. The history table gives up that option — concurrent writes both succeed at the DB level, so preventing races requires an external lock instead. This is a real cost of the append-only design.
+- **Optimistic locking trade-off.** A single `status` column makes check-and-set easy: `UPDATE orders SET status = ? WHERE id = ? AND status = ?` fails atomically if another writer got there first. The history table gives up that option — concurrent writes both succeed at the DB level, so preventing races requires an external lock instead. This is a real cost of the append-only design. A denormalized `status` column on `orders`, kept in sync with `order_status_history` inside a transaction, could recover optimistic locking without sacrificing the audit trail.
 
 #### Serialized payment + completion processing
 
@@ -213,6 +213,10 @@ Logging `PaymentAuthorized` immediately before attempting completion means the s
 #### Richer transition definitions
 
 At production scale, the [`VALID_TRANSITIONS`](src/models/OrderStatus.ts#L27) table would need to express more than "from → to" edges. Guards (blocking a transition unless a runtime condition is met — e.g. order value below a fraud threshold, cooldown window elapsed) and side effects (actions that fire on entering a state — e.g. triggering an alert on `NeedsAttention`, releasing an inventory hold on `Cancelled`) would need to be co-located with the transitions they govern rather than scattered across calling code. At that point, a dedicated state machine library like XState is worth considering — it handles guards, entry/exit actions, async flows, and nested states as first-class concepts, and ships a visualizer that keeps the machine diagram in sync with the implementation.
+
+#### Denormalized `status` column on `orders` for optimistic locking
+
+Adding a `status` column to the [`orders`](src/database.ts#L10) table, kept in sync with [`order_status_history`](src/database.ts#L17), could recover atomic concurrency control without giving up the audit trail. On each transition, the write becomes: `UPDATE orders SET status = ? WHERE id = ? AND status = ?` followed by an insert into `order_status_history`, both inside a transaction. If the `UPDATE` affects 0 rows, another writer already advanced the status — the request aborts before writing anything. This turns a silent race into a loud, detectable conflict. The `orders.status` column also makes the current-status read a direct column lookup rather than `ORDER BY id DESC LIMIT 1`, which is a minor but real performance improvement at scale.
 
 #### `previous_status` column on `order_status_history`
 
