@@ -9,6 +9,14 @@ enum OrderStatus {
   Complete = 'Complete',
 }
 
+// States from which checkout may be initiated. Must stay in sync with CHECKOUT_START:
+// every state here must have PaymentAuthorized as a valid next state.
+const CHECKOUT_ALLOWED = new Set([
+  OrderStatus.Initialized,
+  OrderStatus.PaymentDeclined,
+  OrderStatus.Cancelled,
+])
+
 // States reachable on checkout entry: authorize succeeds or fails
 const CHECKOUT_START: OrderStatus[] = [
   OrderStatus.PaymentAuthorized,
@@ -38,12 +46,6 @@ export function canTransition(from: OrderStatus, to: OrderStatus): boolean {
 export function assertTransition(from: OrderStatus, to: OrderStatus): void {
   if (!canTransition(from, to)) throw new InvalidTransitionError(from, to)
 }
-
-const CHECKOUT_ALLOWED = new Set([
-  OrderStatus.Initialized,
-  OrderStatus.PaymentDeclined,
-  OrderStatus.Cancelled,
-])
 
 export function assertCheckoutAllowed(status: OrderStatus): void {
   if (!CHECKOUT_ALLOWED.has(status)) throw new CheckoutNotAllowedError(status)
