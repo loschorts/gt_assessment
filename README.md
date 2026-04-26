@@ -136,7 +136,7 @@ Status transitions are stored in a dedicated append-only `order_status_history` 
 | Order in terminal state | unchanged (409) | No |
 | Payment authorization fails | `PaymentDeclined` | No |
 | Completion fails, void succeeds | `Cancelled` | No |
-| Completion fails, void also fails | `NeedsAttention` | **Yes** |
+| Completion fails, void also fails | `NeedsAttention` | No |
 
 ---
 
@@ -167,7 +167,7 @@ The alternative — encoding transitions implicitly in code, using TypeScript di
 **Scope exclusions:**
 - **Inventory management** is out of scope. The service assumes tickets are available; seat reservation and locking against concurrent buyers are not modeled.
 - **`tryComplete()` is a stub.** Ticket transfer mechanics (downstream API calls, retries, idempotency keys) are outside scope.
-- **`NeedsAttention` resolution is detected but not routed.** The mechanism for assigning cases to a support queue is not built out.
+- **`NeedsAttention` alerting and resolution are out of scope.** The service correctly identifies and logs orders that require manual intervention, but surfacing them — whether to a support queue, an on-call system, or an automated agent — is not implemented.
 - **Distributed write race conditions are out of scope.** Concurrent checkout attempts on the same order are not guarded against. This would be addressed with a DB-level pessimistic lock: an atomic `INSERT ... SELECT` into a `checkout_locks` table, claimed at checkout entry and released in a `finally` block. A TTL column plus a background reaper (or a DB-native advisory lock) would handle abandoned locks in production.
 - **Simulation infrastructure is mixed into production stubs.** `PaymentMethod` and `Order.tryComplete()` call `throwIfSimulated()` directly, which means error injection logic lives inside the production code path. The tests don't use this — they use Jest spies. The simulation system exists solely to power the browser-based demo UI. In a real service this would be extracted: either a separate injectable test double, or a middleware-level flag that never touches the core model code.
 
@@ -175,7 +175,7 @@ The alternative — encoding transitions implicitly in code, using TypeScript di
 
 ## What I'd Do Differently
 
-**`NeedsAttention` routing.** The right approach depends on who resolves it. For human agents, a `GET /orders?status=NeedsAttention` endpoint feeds a support queue polled by a recurring job. For automated agents, a pub-sub model pushes directly onto an event queue. The current implementation fires an in-process alert — the hook is there, but the destination isn't.
+**`NeedsAttention` alerting and routing.** The service detects and records partial failures but does not surface them. The right approach depends on who resolves them. For human agents, a `GET /orders?status=NeedsAttention` endpoint could feed a support queue polled by a recurring job — polling latency is negligible if resolution happens on human timescales. For automated agents, a pub-sub model could push directly into an event queue for immediate assignment.
 
 **Status transition messages.** Each `order_status_history` row could carry an optional `message` field — the payment provider's decline code on `PaymentDeclined`, the error type on `NeedsAttention`, a correlation ID on `Cancelled`. This makes the history self-contained for diagnostics and support triage without requiring a separate log query.
 

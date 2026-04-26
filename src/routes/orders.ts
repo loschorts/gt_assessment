@@ -4,7 +4,6 @@ import Order from '../models/Order'
 import PaymentMethod from '../models/PaymentMethod'
 import OrderStatus from '../models/OrderStatus'
 import * as db from '../db'
-import { fireAlert } from '../alerts'
 import { InvalidTransitionError, OrderNotInitializedError } from '../errors'
 
 const router = Router()
@@ -59,10 +58,6 @@ router.post('/:orderId/checkout', async (req: Request, res: Response) => {
       return res.status(404).json({ error: e.message })
     }
     throw e
-  }
-
-  if (status === OrderStatus.NeedsAttention) {
-    fireAlert(orderId)
   }
 
   const httpStatus = status === OrderStatus.Complete ? 200 : 422
