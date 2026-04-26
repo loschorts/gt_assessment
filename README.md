@@ -159,7 +159,13 @@ The `orders` table carries no `status` column. Current status is derived from `o
 
 ---
 
+## Assumptions
 
+- **Fulfillment is hand-waved.** [`tryComplete()`](src/models/Order.ts#L61) is a stub — it represents transferring tickets to the buyer but does nothing. A robust system would require a dedicated fulfillment model and service handling inventory reservation, seat locking, and downstream confirmation. That service would still be orchestrated by `tryCheckout` as another participant in the checkout flow, keeping the coordination logic in one place.
+- **`NeedsAttention` alerting and resolution are out of scope.** The service correctly identifies and logs orders that require manual intervention, but surfacing them is not implemented. The right approach depends on who resolves them: for human agents, a `GET /orders?status=NeedsAttention` endpoint could feed a support queue polled by a recurring job — polling latency is negligible if resolution happens on human timescales. For automated agents, a pub-sub model could push directly into an event queue for immediate assignment.
+- **Simulation infrastructure is mixed into production stubs.** [`PaymentMethod`](src/models/PaymentMethod.ts#L6) and [`Order.tryComplete()`](src/models/Order.ts#L61) call [`throwIfSimulated()`](src/simulation.ts#L16) directly, which means error injection logic lives inside the production code path. The tests don't use this — they use Jest spies. The simulation system exists solely to power the browser-based demo UI. In a real service this would be extracted: either a separate injectable test double, or a middleware-level flag that never touches the core model code.
+
+---
 
 ## Tradeoffs
 
@@ -185,11 +191,6 @@ The tradeoff is expressiveness. A data-driven table can only represent "from →
 
 The alternative — encoding transitions implicitly in code, using TypeScript discriminated unions and exhaustive `switch` statements — can surface invalid transitions at compile time rather than runtime, and keeps each transition co-located with the conditions that trigger it. The cost is readability and maintainability: the full set of valid transitions is no longer visible in one place, and adding a new state requires auditing every `switch` block that might need to handle it. For a machine this size, either approach works; the table wins on clarity. At significantly higher complexity, a dedicated state machine library with the ability to handle guards and side-effects, such as XState, handles both.
 
-#### Scope exclusions
-- **Fulfillment is hand-waved.** [`tryComplete()`](src/models/Order.ts#L61) is a stub — it represents transferring tickets to the buyer but does nothing. A robust system would require a dedicated fulfillment model and service handling inventory reservation, seat locking, and downstream confirmation. That service would still be orchestrated by `tryCheckout` as another participant in the checkout flow, keeping the coordination logic in one place.
-- **`NeedsAttention` alerting and resolution are out of scope.** The service correctly identifies and logs orders that require manual intervention, but surfacing them is not implemented. The right approach depends on who resolves them: for human agents, a `GET /orders?status=NeedsAttention` endpoint could feed a support queue polled by a recurring job — polling latency is negligible if resolution happens on human timescales. For automated agents, a pub-sub model could push directly into an event queue for immediate assignment.
-zd
-- **Simulation infrastructure is mixed into production stubs.** [`PaymentMethod`](src/models/PaymentMethod.ts#L6) and [`Order.tryComplete()`](src/models/Order.ts#L61) call [`throwIfSimulated()`](src/simulation.ts#L16) directly, which means error injection logic lives inside the production code path. The tests don't use this — they use Jest spies. The simulation system exists solely to power the browser-based demo UI. In a real service this would be extracted: either a separate injectable test double, or a middleware-level flag that never touches the core model code.
 
 ---
 
