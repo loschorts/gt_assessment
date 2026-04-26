@@ -1,6 +1,6 @@
 # Order State Machine
 
-A TypeScript/Express service modeling an order state machine with stage-dependent failure recovery.
+A TypeScript/Express service modeling an order state machine with stage-dependent failure recovery and 
 
 ---
 
@@ -161,16 +161,17 @@ Status transitions are stored in a dedicated append-only [`order_status_history`
 
 ## Tradeoffs
 
-**Orchestration over choreography.** [`Order.tryCheckout()`](src/models/Order.ts#L71) is an orchestrator: it owns the full checkout sequence, calls each participant ([`PaymentMethod`](src/models/PaymentMethod.ts#L6), [`tryComplete`](src/models/Order.ts#L61)) directly, and decides what to do based on the result. The participants are stateless and unaware of each other or the broader workflow.
+**Orchestration over choreography.** [`Order.tryCheckout()`](src/models/Order.ts#L71) acts as an orchestrator: it owns the full checkout sequence, calls each participant ([`PaymentMethod`](src/models/PaymentMethod.ts#L6), [`tryComplete`](src/models/Order.ts#L61)) directly, and decides what to do based on the result. The participants are stateless and unaware of each other or the broader workflow.
 
 The alternative is choreography, where each participant reacts to events independently — a completion service listens for `PaymentAuthorized`, a void service listens for `CompletionFailed`, a status service listens to everything. There's no central coordinator; the flow is implicit in the event topology. Choreography scales better and decouples services, but reconstructing why an order reached `NeedsAttention` means tracing events across multiple consumers. Orchestration keeps the failure recovery logic explicit and in one place, which makes it straightforward to read, test, and reason about.
 
 A conventional alternative to placing the orchestrator on the model is a dedicated service layer — a `CheckoutService` that coordinates `Order` and `PaymentMethod` while keeping the model focused on state. That separation becomes worthwhile as the flow grows and `tryCheckout` accumulates more dependencies and branching. At this scale it would add abstraction without pulling its weight.
 
-**SQLite over plain in-memory structures.** Even though the database is in-memory (`:memory:`), using SQLite gives the status history a real relational model with timestamps, ordered rows, and indexed lookups. The schema makes the audit trail queryable and the storage layer easy to swap for a persistent DB later. Storing status transitions in a dedicated append-only [`order_status_history`](src/database.ts#L17) table rather than a single `status` column has compounding advantages over a flat field:
+**Append-only [`order_status_history`](src/database.ts#L17) table over a single status field.** Storing each transition as a new row rather than overwriting a `status` column on the order means the full sequence of states is always available, not just the current one. The cost is a slightly more complex query for current status (`ORDER BY id DESC LIMIT 1` vs. a direct column read) and more storage. Pros and cons:
 
 - **Troubleshooting `NeedsAttention` orders.** The full history shows exactly which statuses preceded it and when, giving a resolving agent a self-contained audit trail without querying external systems.
-- **Systemic health monitoring.** Aggregating across the table surfaces patterns that single-order views miss: a spike in `PaymentDeclined` may indicate a payment provider degradation; a spike in `NeedsAttention` points to a completion service outage; an elevated `Cancelled` rate suggests the void path is working but completion is unreliable.
+- **Service health monitoring.** Aggregating across the table surfaces patterns that single-order views miss: a spike in `PaymentDeclined` may indicate a payment provider degradation; a spike in `NeedsAttention` points to a completion service outage; an elevated `Cancelled` rate suggests the void path is working but completion is unreliable.
+- **Optimistic locking trade-off.** A single `status` column makes check-and-set easy: `UPDATE orders SET status = ? WHERE id = ? AND status = ?` fails atomically if another writer got there first. The history table gives up that option — concurrent writes both succeed at the DB level, so preventing races requires an external lock instead. This is a real cost of the append-only design.
 
 **Serialized payment + completion processing.** Payment authorization and order completion run sequentially in a single request. This preserves transaction integrity at the cost of some latency, which is the right tradeoff: a checkout where a charge and a ticket transfer are partially applied is a harder problem than a slightly slower checkout.
 
