@@ -138,7 +138,9 @@ A stub interface with two methods: [`authorize()`](src/models/PaymentMethod.ts#L
 
 ### Data Storage
 
-Status transitions are stored in a dedicated append-only [`order_status_history`](src/database.ts#L17) table rather than a single `status` column on the [`orders`](src/database.ts#L10) row.
+Two tables: [`orders`](src/database.ts#L10) holds the order record (`id`, `client_id`, `ticket_ids`, `payment_id`), and [`order_status_history`](src/database.ts#L17) holds the state log (`order_id`, `status`, `created_at`). The tables are related by `order_id` — every status row is a child of an order row.
+
+The `orders` table carries no `status` column. Current status is derived from `order_status_history` by selecting the most recent row for a given `order_id`. This means `orders` is purely structural — it records what the order is (which client, which tickets, which payment), while `order_status_history` records what happened to it. Neither table encodes the other's concern.
 
 ### Test Coverage
 
