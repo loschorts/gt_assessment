@@ -14,7 +14,20 @@ npm run dev    # development server on :3000
 
 The service uses SQLite with an in-memory database, so state does not persist across restarts. No external dependencies are required.
 
-A browser-based test UI is available at `http://localhost:3000` when the dev server is running.
+### Dev Console
+
+A browser-based dev console is available at `http://localhost:3000` when the dev server is running.
+
+![Dev Console](public/screenshot.png)
+
+The console exposes the full API as interactive forms and provides a live view of the database state:
+
+- **Create Order** — submits `POST /orders` and populates the order table below
+- **Checkout** — submits `POST /orders/:id/checkout`; the orderId field auto-fills when you click a row in the orders table
+- **Get Status** — submits `GET /orders/:id/status`
+- **Error Simulation** — toggles [`throwIfSimulated()`](src/simulation.ts#L16) for each error class, allowing any failure path to be triggered without modifying code: `PaymentDeclinedError` alone produces `PaymentDeclined`; `CompletionFailedError` alone produces `Cancelled`; both together produce `NeedsAttention`
+- **Orders table** — live view of all orders in the in-memory DB, with current status
+- **Status History table** — append-only log of every status transition, with timestamps
 
 ---
 
@@ -57,7 +70,7 @@ stateDiagram-v2
     NeedsAttention --> [*]
 ```
 
-Valid transitions are declared in a single `VALID_TRANSITIONS` table in `OrderStatus.ts`. `Order.tryCheckout()` consults the table rather than implementing ad-hoc guards — the state machine is auditable at a glance and new states are cheap to add.
+Valid transitions are declared in a single [`VALID_TRANSITIONS`](src/models/OrderStatus.ts#L27) table in [`OrderStatus.ts`](src/models/OrderStatus.ts). [`Order.tryCheckout()`](src/models/Order.ts#L71) consults the table rather than implementing ad-hoc guards — the state machine is auditable at a glance and new states are cheap to add.
 
 `PaymentDeclined` and `Cancelled` are retryable. `NeedsAttention` and `Complete` are terminal; i.e. the user cannot attempt a subsequent checkout on the order (until the issue is resolved).
 
@@ -97,30 +110,30 @@ The full implementation is in [`Order.tryCheckout()`](src/models/Order.ts#L71). 
 
 ### Models
 
-#### `Order`
+#### [`Order`](src/models/Order.ts#L16)
 - `clientId: string`
 - `ticketIds: string[]`
 
-Key methods: `initialize()`, `tryCheckout(payment, paymentId)`, `getStatus()`, `getStatusHistory()`
+Key methods: [`initialize()`](src/models/Order.ts#L37), [`tryCheckout(payment, paymentId)`](src/models/Order.ts#L71), [`getStatus()`](src/models/Order.ts#L42), [`getStatusHistory()`](src/models/Order.ts#L52)
 
-#### `PaymentMethod`
-A stub interface with two methods: `authorize()` and `void()`. Either can be configured to throw to simulate failure scenarios.
+#### [`PaymentMethod`](src/models/PaymentMethod.ts#L6)
+A stub interface with two methods: [`authorize()`](src/models/PaymentMethod.ts#L14) and [`void()`](src/models/PaymentMethod.ts#L19). Either can be configured to throw to simulate failure scenarios.
 
 ### API
 
 | Endpoint | Description |
 |---|---|
-| `POST /orders` | Initialize an order. Body: `{ clientId, ticketIds }` |
-| `POST /orders/:orderId/checkout` | Advance through payment + completion. Body: `{ paymentId }` |
-| `GET /orders/:orderId/status` | Get current status and full status history |
+| [`POST /orders`](src/routes/orders.ts#L21) | Initialize an order. Body: `{ clientId, ticketIds }` |
+| [`POST /orders/:orderId/checkout`](src/routes/orders.ts#L35) | Advance through payment + completion. Body: `{ paymentId }` |
+| [`GET /orders/:orderId/status`](src/routes/orders.ts#L68) | Get current status and full status history |
 
-`POST /checkout` on a `Complete` order returns `409 Conflict`. Tickets are non-fungible — once transferred, re-checkout on the same order would risk double-transfer to the same or a different buyer.
+`POST /checkout` on a `Complete` order returns `409 Conflict`. Tickets are non-fungible — once transferred, so an order cannot be completed twice.
 
 `POST /checkout` on a `NeedsAttention` order also returns `409`. Manual resolution is required before the order can proceed.
 
 ### Data Storage
 
-Status transitions are stored in a dedicated append-only `order_status_history` table rather than a single `status` column on the orders row. This design has compounding benefits beyond what a flat field provides:
+Status transitions are stored in a dedicated append-only [`order_status_history`](src/database.ts#L17) table rather than a single `status` column on the [`orders`](src/database.ts#L10) row. This design has compounding benefits beyond what a flat field provides:
 
 - **Concurrency control.** In a multi-instance deployment, the latest row in `order_status_history` is the authoritative current state. Reads against an index on `(order_id, id DESC)` are fast enough to serve as a real-time gate before each checkout attempt. Combined with a DB-level lock (e.g. `SELECT ... FOR UPDATE` on the order row, or a `checkout_locks` table), this provides a reliable serialization point — a second concurrent checkout reads the committed status before it can write, so it either blocks or fails fast rather than racing silently.
 
@@ -130,15 +143,18 @@ Status transitions are stored in a dedicated append-only `order_status_history` 
 
 ### Test Coverage
 
-| Scenario | Final Status | Alert? |
-|---|---|---|
-| Happy path | `Complete` | No |
-| Invalid request body | unchanged (400) | No |
-| Order not found | unchanged (404) | No |
-| Order in terminal state | unchanged (409) | No |
-| Payment authorization fails | `PaymentDeclined` | No |
-| Completion fails, void succeeds | `Cancelled` | No |
-| Completion fails, void also fails | `NeedsAttention` | No |
+52 tests across two files.
+
+[`tests/order.test.ts`](tests/order.test.ts) — unit tests against the `Order` model directly:
+- [`getStatus()`](tests/order.test.ts#L26) — verifies initial status before checkout
+- [`tryCheckout()` — method call behavior](tests/order.test.ts#L32) — verifies which collaborators (`authorize`, `tryComplete`, `void`) are called or skipped under each failure path
+- [`tryCheckout()` — outcome scenarios](tests/order.test.ts#L67) — the four required cases: happy path, payment decline, completion fail + void success, completion fail + void fail
+- [`statusHistory`](tests/order.test.ts#L103) — verifies full status sequences for each path, timestamp presence, and chronological ordering
+
+[`tests/api.test.ts`](tests/api.test.ts) — integration tests against the HTTP API:
+- [`POST /orders`](tests/api.test.ts#L20) — valid creation and input validation (missing fields, wrong types)
+- [`POST /orders/:orderId/checkout`](tests/api.test.ts#L58) — all checkout outcomes, retry eligibility by status, invalid/missing paymentId, unknown order
+- [`GET /orders/:orderId/status`](tests/api.test.ts#L256) — status and history responses for each outcome path, timestamp ordering, unknown order
 
 ---
 
@@ -146,7 +162,7 @@ Status transitions are stored in a dedicated append-only `order_status_history` 
 
 ## Tradeoffs
 
-**Orchestration over choreography.** `Order.tryCheckout()` is an orchestrator: it owns the full checkout sequence, calls each participant (`PaymentMethod`, `tryComplete`) directly, and decides what to do based on the result. The participants are stateless and unaware of each other or the broader workflow.
+**Orchestration over choreography.** [`Order.tryCheckout()`](src/models/Order.ts#L71) is an orchestrator: it owns the full checkout sequence, calls each participant ([`PaymentMethod`](src/models/PaymentMethod.ts#L6), [`tryComplete`](src/models/Order.ts#L61)) directly, and decides what to do based on the result. The participants are stateless and unaware of each other or the broader workflow.
 
 The alternative is choreography, where each participant reacts to events independently — a completion service listens for `PaymentAuthorized`, a void service listens for `CompletionFailed`, a status service listens to everything. There's no central coordinator; the flow is implicit in the event topology. Choreography scales better and decouples services, but reconstructing why an order reached `NeedsAttention` means tracing events across multiple consumers. Orchestration keeps the failure recovery logic explicit and in one place, which makes it straightforward to read, test, and reason about.
 
@@ -158,7 +174,7 @@ A conventional alternative to placing the orchestrator on the model is a dedicat
 
 **`PaymentAuthorized` as a transitional status.** Logging `PaymentAuthorized` immediately before attempting completion means the status history alone is sufficient to determine whether a charge is outstanding on a failed order. The alternative — inferring authorization from the presence of a `paymentId` — requires cross-referencing the payment provider.
 
-**Explicit `VALID_TRANSITIONS` table.** Declaring valid transitions as a data structure has real advantages: the entire state machine is visible in one place, every `logStatus` call is uniformly gated by `assertTransition` so invalid transitions fail loudly, and adding a new state requires only a new table entry rather than changes scattered across business logic. The table can also be unit-tested in isolation, independent of the checkout flow.
+**Explicit [`VALID_TRANSITIONS`](src/models/OrderStatus.ts#L27) table.** Declaring valid transitions as a data structure has real advantages: the entire state machine is visible in one place, every `logStatus` call is uniformly gated by [`assertTransition`](src/models/OrderStatus.ts#L40) so invalid transitions fail loudly, and adding a new state requires only a new table entry rather than changes scattered across business logic. The table can also be unit-tested in isolation, independent of the checkout flow.
 
 The tradeoff is expressiveness. A data-driven table can only represent "from → to" edges — it has no way to encode the *conditions* under which a transition is valid. Guard clauses like "can only transition to `FraudReview` if the order value exceeds a threshold" or "void is only allowed if authorization happened within 24 hours" must live in the calling code, outside the table. This means the table is not a complete specification of the state machine; it's a partial one, and the rest is implicit in the surrounding logic.
 
@@ -166,10 +182,10 @@ The alternative — encoding transitions implicitly in code, using TypeScript di
 
 **Scope exclusions:**
 - **Inventory management** is out of scope. The service assumes tickets are available; seat reservation and locking against concurrent buyers are not modeled.
-- **`tryComplete()` is a stub.** Ticket transfer mechanics (downstream API calls, retries, idempotency keys) are outside scope.
+- **[`tryComplete()`](src/models/Order.ts#L61) is a stub.** Ticket transfer mechanics (downstream API calls, retries, idempotency keys) are outside scope.
 - **`NeedsAttention` alerting and resolution are out of scope.** The service correctly identifies and logs orders that require manual intervention, but surfacing them — whether to a support queue, an on-call system, or an automated agent — is not implemented.
 - **Distributed write race conditions are out of scope.** Concurrent checkout attempts on the same order are not guarded against. This would be addressed with a DB-level pessimistic lock: an atomic `INSERT ... SELECT` into a `checkout_locks` table, claimed at checkout entry and released in a `finally` block. A TTL column plus a background reaper (or a DB-native advisory lock) would handle abandoned locks in production.
-- **Simulation infrastructure is mixed into production stubs.** `PaymentMethod` and `Order.tryComplete()` call `throwIfSimulated()` directly, which means error injection logic lives inside the production code path. The tests don't use this — they use Jest spies. The simulation system exists solely to power the browser-based demo UI. In a real service this would be extracted: either a separate injectable test double, or a middleware-level flag that never touches the core model code.
+- **Simulation infrastructure is mixed into production stubs.** [`PaymentMethod`](src/models/PaymentMethod.ts#L6) and [`Order.tryComplete()`](src/models/Order.ts#L61) call [`throwIfSimulated()`](src/simulation.ts#L16) directly, which means error injection logic lives inside the production code path. The tests don't use this — they use Jest spies. The simulation system exists solely to power the browser-based demo UI. In a real service this would be extracted: either a separate injectable test double, or a middleware-level flag that never touches the core model code.
 
 ---
 
@@ -181,7 +197,7 @@ The alternative — encoding transitions implicitly in code, using TypeScript di
 
 **Rate limiting.** Without it, rapid duplicate checkout attempts on the same order can race. Needed for both data integrity and abuse protection.
 
-**Additional intermediate states.** The `VALID_TRANSITIONS` table was designed to accommodate these without changes to business logic — a new state requires only a new entry in the table:
+**Additional intermediate states.** The [`VALID_TRANSITIONS`](src/models/OrderStatus.ts#L27) table was designed to accommodate these without changes to business logic — a new state requires only a new entry in the table:
 - `FraudReview` — flagged by a risk model; blocks checkout pending manual or automated clearance.
 - `RateLimited` — too many attempts in a short window; blocks until cooldown expires.
 - `InventoryHold` — tickets reserved but not yet confirmed available; checkout paused until the hold resolves or times out.
@@ -189,4 +205,4 @@ The alternative — encoding transitions implicitly in code, using TypeScript di
 - `OrderExpired` — initialized but not checked out within an allowed window; terminal state that prevents fulfillment of stale orders.
 - `PromotionExpired` — promotional price applied at initialization is no longer valid at checkout; blocks completion and prompts re-pricing before retry.
 
-**Richer transition definitions.** At production scale, the `VALID_TRANSITIONS` table would need to express more than "from → to" edges. Guards (blocking a transition unless a runtime condition is met — e.g. order value below a fraud threshold, cooldown window elapsed) and side effects (actions that fire on entering a state — e.g. triggering an alert on `NeedsAttention`, releasing an inventory hold on `Cancelled`) would need to be co-located with the transitions they govern rather than scattered across calling code. At that point, a dedicated state machine library like XState is worth considering — it handles guards, entry/exit actions, async flows, and nested states as first-class concepts, and ships a visualizer that keeps the machine diagram in sync with the implementation.
+**Richer transition definitions.** At production scale, the [`VALID_TRANSITIONS`](src/models/OrderStatus.ts#L27) table would need to express more than "from → to" edges. Guards (blocking a transition unless a runtime condition is met — e.g. order value below a fraud threshold, cooldown window elapsed) and side effects (actions that fire on entering a state — e.g. triggering an alert on `NeedsAttention`, releasing an inventory hold on `Cancelled`) would need to be co-located with the transitions they govern rather than scattered across calling code. At that point, a dedicated state machine library like XState is worth considering — it handles guards, entry/exit actions, async flows, and nested states as first-class concepts, and ships a visualizer that keeps the machine diagram in sync with the implementation.
