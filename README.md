@@ -179,7 +179,7 @@ The service correctly identifies and logs orders that require manual interventio
 
 #### Explicit [`VALID_TRANSITIONS`](src/models/OrderStatus.ts#L27) table
 
-The table keeps the full state machine auditable in one place and uniformly gates every transition through [`assertTransition`](src/models/OrderStatus.ts#L40). The tradeoff is expressiveness: it can only encode "from → to" edges, not the conditions under which a transition is valid. Guards and side effects end up scattered across calling code rather than co-located with the transitions they govern. The alternative — explicit inline transition — keeps each transition co-located with its conditions but loses the at-a-glance auditability. At production scale, a dedicated state machine library like XState is the better choice: it models guards, entry/exit actions, and async flows as first-class concepts while keeping the machine visualizable and auditable.
+The table keeps the full state machine auditable in one place, uniformly gates every transition through [`assertTransition`](src/models/OrderStatus.ts#L40), and makes new states cheap to add — a new entry in the table is all that's required, with no changes to business logic. The tradeoff is expressiveness: it can only encode "from → to" edges, not the conditions under which a transition is valid. Guards and side effects end up scattered across calling code rather than co-located with the transitions they govern. The alternative — explicit inline transitions — keeps each transition co-located with its conditions but loses the at-a-glance auditability. At production scale, a dedicated state machine library like XState is the better choice: it models guards, entry/exit actions, and async flows as first-class concepts while keeping the machine visualizable and auditable.
 
 #### Orchestration over choreography
 
@@ -226,12 +226,3 @@ Adding a `previous_status` column to the [`order_status_history`](src/database.t
 
 Each `order_status_history` row could carry an optional `message` field — the payment provider's decline code on `PaymentDeclined`, the error type on `NeedsAttention`, a correlation ID on `Cancelled`. This makes the history self-contained for diagnostics and support triage without requiring a separate log query.
 
-#### Additional intermediate states
-
-The [`VALID_TRANSITIONS`](src/models/OrderStatus.ts#L27) table was designed to accommodate these without changes to business logic — a new state requires only a new entry in the table:
-- `FraudReview` — flagged by a risk model; blocks checkout pending manual or automated clearance.
-- `RateLimited` — too many attempts in a short window; blocks until cooldown expires.
-- `InventoryHold` — tickets reserved but not yet confirmed available; checkout paused until the hold resolves or times out.
-- `AwaitingExternalConfirmation` — payment authorized but completion is waiting on an async callback (e.g. a 3DS challenge or a slow downstream ACK).
-- `OrderExpired` — initialized but not checked out within an allowed window; terminal state that prevents fulfillment of stale orders.
-- `PromotionExpired` — promotional price applied at initialization is no longer valid at checkout; blocks completion and prompts re-pricing before retry.
