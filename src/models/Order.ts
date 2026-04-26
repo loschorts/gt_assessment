@@ -26,7 +26,7 @@ class Order {
     this.paymentId = null
   }
 
-  async logStatus(status: OrderStatus): Promise<void> {
+  private async logStatus(status: OrderStatus): Promise<void> {
     const sqliteDb = await getDb()
     await sqliteDb.run(
       'INSERT INTO order_status_history (order_id, status) VALUES (?, ?)',

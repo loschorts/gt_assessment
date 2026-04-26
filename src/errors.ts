@@ -21,7 +21,7 @@ export class PaymentUnvoidableError extends Error {
 
 export class InvalidTransitionError extends Error {
   constructor(public readonly currentStatus: string) {
-    super(`Cannot initiate checkout from status: ${currentStatus}`)
+    super(`Invalid transition from status: ${currentStatus}`)
     this.name = 'InvalidTransitionError'
   }
 }
