@@ -22,8 +22,7 @@ export async function getOrder(id: string): Promise<Order | null> {
     id
   )
   if (!row) return null
-  const order = new Order(row.client_id, JSON.parse(row.ticket_ids))
-  order.id = row.id
+  const order = new Order(row.client_id, JSON.parse(row.ticket_ids), row.id)
   order.paymentId = row.payment_id
   return order
 }

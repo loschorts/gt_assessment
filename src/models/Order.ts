@@ -20,8 +20,8 @@ class Order {
   ticketIds: string[]
   paymentId: string | null
 
-  constructor(clientId: string, ticketIds: string[]) {
-    this.id = uuidv4()
+  constructor(clientId: string, ticketIds: string[], id: string = uuidv4()) {
+    this.id = id
     this.clientId = clientId
     this.ticketIds = ticketIds
     this.paymentId = null
