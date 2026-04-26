@@ -7,6 +7,7 @@ import { getDb } from '../database'
 // each other inside function bodies, so CommonJS resolves both before any function runs.
 import * as db from '../db'
 import { throwIfSimulated } from '../simulation'
+import { fireAlert } from '../alerts'
 
 export interface StatusHistoryEntry {
   status: OrderStatus
@@ -89,6 +90,7 @@ class Order {
           return this.transition(currentStatus, OrderStatus.Cancelled)
         } catch (voidError) {
           const status = await this.transition(currentStatus, OrderStatus.NeedsAttention)
+          fireAlert(this.id)
           if (!(voidError instanceof PaymentUnvoidableError)) throw voidError
           return status
         }

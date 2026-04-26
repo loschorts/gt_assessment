@@ -3,6 +3,7 @@ import Order from '../src/models/Order'
 import PaymentMethod from '../src/models/PaymentMethod'
 import OrderStatus from '../src/models/OrderStatus'
 import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError } from '../src/errors'
+import * as alerts from '../src/alerts'
 
 describe('Order', () => {
   let order: Order
@@ -10,6 +11,7 @@ describe('Order', () => {
   let authorizeSpy: jest.SpyInstance
   let voidSpy: jest.SpyInstance
   let completeSpy: jest.SpyInstance
+  let alertSpy: jest.SpyInstance
 
   beforeEach(async () => {
     await clearAll()
@@ -19,6 +21,7 @@ describe('Order', () => {
     authorizeSpy = jest.spyOn(payment, 'authorize').mockResolvedValue()
     voidSpy = jest.spyOn(payment, 'void').mockResolvedValue()
     completeSpy = jest.spyOn(order, 'tryComplete').mockResolvedValue()
+    alertSpy = jest.spyOn(alerts, 'fireAlert').mockImplementation(() => {})
   })
 
   afterEach(() => jest.restoreAllMocks())
@@ -61,6 +64,31 @@ describe('Order', () => {
     test('does not call void on success', async () => {
       await order.tryCheckout(payment, 'pay-test')
       expect(voidSpy).not.toHaveBeenCalled()
+    })
+
+    test('fires alert when completion fails and void also fails → NeedsAttention', async () => {
+      completeSpy.mockRejectedValue(new CompletionFailedError())
+      voidSpy.mockRejectedValue(new PaymentUnvoidableError())
+      await order.tryCheckout(payment, 'pay-test')
+      expect(alertSpy).toHaveBeenCalledTimes(1)
+      expect(alertSpy).toHaveBeenCalledWith(order.id)
+    })
+
+    test('does not fire alert on success', async () => {
+      await order.tryCheckout(payment, 'pay-test')
+      expect(alertSpy).not.toHaveBeenCalled()
+    })
+
+    test('does not fire alert when payment is declined', async () => {
+      authorizeSpy.mockRejectedValue(new PaymentDeclinedError())
+      await order.tryCheckout(payment, 'pay-test')
+      expect(alertSpy).not.toHaveBeenCalled()
+    })
+
+    test('does not fire alert when completion fails but void succeeds → Cancelled', async () => {
+      completeSpy.mockRejectedValue(new CompletionFailedError())
+      await order.tryCheckout(payment, 'pay-test')
+      expect(alertSpy).not.toHaveBeenCalled()
     })
   })
 

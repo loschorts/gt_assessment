@@ -165,9 +165,9 @@ The `orders` table carries no `status` column. Current status is derived from `o
 
 [`tryComplete()`](src/models/Order.ts#L61) is a stub — it represents transferring tickets to the buyer but does nothing. A robust system would require a dedicated fulfillment model and service handling inventory reservation, seat locking, and downstream confirmation. That service would still be orchestrated by `tryCheckout` as another participant in the checkout flow, keeping the coordination logic in one place.
 
-#### `NeedsAttention` alerting and resolution are out of scope
+#### `NeedsAttention` resolution is out of scope
 
-The service correctly identifies and logs orders that require manual intervention, but surfacing them is not implemented. The right approach depends on who resolves them: for human agents, a `GET /orders?status=NeedsAttention` endpoint could feed a support queue polled by a recurring job — polling latency is negligible if resolution happens on human timescales. For automated agents, a pub-sub model could push directly into an event queue for immediate assignment.
+When an order reaches `NeedsAttention`, [`fireAlert()`](src/alerts.ts#L1) is called immediately. The stub logs to `console.warn`; in production it would enqueue to a support ticket system. Resolution itself is not implemented — the right approach depends on who resolves the order: for human agents, a `GET /orders?status=NeedsAttention` endpoint could feed a support queue polled by a recurring job — polling latency is negligible if resolution happens on human timescales. For automated agents, a pub-sub model could push directly into an event queue for immediate assignment.
 
 #### Simulation infrastructure is mixed into production stubs
 

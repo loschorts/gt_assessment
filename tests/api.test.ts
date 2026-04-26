@@ -5,6 +5,7 @@ import Order from '../src/models/Order'
 import PaymentMethod from '../src/models/PaymentMethod'
 import OrderStatus from '../src/models/OrderStatus'
 import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError } from '../src/errors'
+import * as alerts from '../src/alerts'
 
 beforeEach(async () => {
   await db.clearAll()
@@ -13,6 +14,7 @@ beforeEach(async () => {
   jest.spyOn(PaymentMethod.prototype, 'authorize').mockResolvedValue()
   jest.spyOn(PaymentMethod.prototype, 'void').mockResolvedValue()
   jest.spyOn(Order.prototype, 'tryComplete').mockResolvedValue()
+  jest.spyOn(alerts, 'fireAlert').mockImplementation(() => {})
 })
 
 // ─── POST /orders ──────────────────────────────────────────────────────────────
@@ -248,6 +250,47 @@ describe('POST /orders/:orderId/checkout — order creation and state transition
     await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
 
     expect(voidSpy).not.toHaveBeenCalled()
+  })
+
+  test('fires alert when completion fails and void also fails → NeedsAttention', async () => {
+    jest.spyOn(Order.prototype, 'tryComplete').mockRejectedValue(new CompletionFailedError())
+    jest.spyOn(PaymentMethod.prototype, 'void').mockRejectedValue(new PaymentUnvoidableError())
+    const alertSpy = jest.spyOn(alerts, 'fireAlert')
+    const orderId = await createOrder()
+
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    expect(alertSpy).toHaveBeenCalledTimes(1)
+    expect(alertSpy).toHaveBeenCalledWith(orderId)
+  })
+
+  test('does not fire alert on success', async () => {
+    const alertSpy = jest.spyOn(alerts, 'fireAlert')
+    const orderId = await createOrder()
+
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    expect(alertSpy).not.toHaveBeenCalled()
+  })
+
+  test('does not fire alert when payment is declined', async () => {
+    jest.spyOn(PaymentMethod.prototype, 'authorize').mockRejectedValue(new PaymentDeclinedError())
+    const alertSpy = jest.spyOn(alerts, 'fireAlert')
+    const orderId = await createOrder()
+
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    expect(alertSpy).not.toHaveBeenCalled()
+  })
+
+  test('does not fire alert when completion fails but void succeeds → Cancelled', async () => {
+    jest.spyOn(Order.prototype, 'tryComplete').mockRejectedValue(new CompletionFailedError())
+    const alertSpy = jest.spyOn(alerts, 'fireAlert')
+    const orderId = await createOrder()
+
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    expect(alertSpy).not.toHaveBeenCalled()
   })
 })
 
