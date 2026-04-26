@@ -59,7 +59,7 @@ stateDiagram-v2
 
 Valid transitions are declared in a single `VALID_TRANSITIONS` table in `OrderStatus.ts`. `Order.tryCheckout()` consults the table rather than implementing ad-hoc guards — the state machine is auditable at a glance and new states are cheap to add.
 
-`PaymentDeclined` and `Cancelled` are retryable. `NeedsAttention` and `Complete` are terminal.
+`PaymentDeclined` and `Cancelled` are retryable. `NeedsAttention` and `Complete` are terminal; i.e. the user cannot attempt a subsequent checkout on the order (until the issue is resolved).
 
 `PaymentAuthorized` is a transitional status logged for diagnostic value. Without it, a resolving agent would have to query the payment provider directly to determine whether a charge is outstanding. It is not a stable resting state: the order moves through it immediately to `Complete`, `Cancelled`, or `NeedsAttention` within the same request. On retry, a fresh authorization is always issued — resuming a stale one risks acting on a charge that has already expired or been reversed.
 
