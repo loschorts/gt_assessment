@@ -124,6 +124,12 @@ Key methods: [`initialize()`](src/models/Order.ts#L37), [`tryCheckout(payment, p
 #### [`PaymentMethod`](src/models/PaymentMethod.ts#L6)
 A stub interface with two methods: [`authorize()`](src/models/PaymentMethod.ts#L14) and [`void()`](src/models/PaymentMethod.ts#L19). Either can be configured to throw to simulate failure scenarios.
 
+### Data Storage
+
+Two tables: [`orders`](src/database.ts#L10) holds the order record (`id`, `client_id`, `ticket_ids`, `payment_id`), and [`order_status_history`](src/database.ts#L17) holds the state log (`order_id`, `status`, `created_at`). The tables are related by `order_id` — every status row is a child of an order row.
+
+The `orders` table carries no `status` column. Current status is derived from `order_status_history` by selecting the most recent row for a given `order_id`. This means `orders` is purely structural — it records what the order is (which client, which tickets, which payment), while `order_status_history` records what happened to it. Neither table encodes the other's concern.
+
 ### API
 
 | Endpoint | Description |
@@ -135,12 +141,6 @@ A stub interface with two methods: [`authorize()`](src/models/PaymentMethod.ts#L
 `POST /checkout` on a `Complete` order returns `409 Conflict`. Tickets are non-fungible — once transferred, so an order cannot be completed twice.
 
 `POST /checkout` on a `NeedsAttention` order also returns `409`. Manual resolution is required before the order can proceed.
-
-### Data Storage
-
-Two tables: [`orders`](src/database.ts#L10) holds the order record (`id`, `client_id`, `ticket_ids`, `payment_id`), and [`order_status_history`](src/database.ts#L17) holds the state log (`order_id`, `status`, `created_at`). The tables are related by `order_id` — every status row is a child of an order row.
-
-The `orders` table carries no `status` column. Current status is derived from `order_status_history` by selecting the most recent row for a given `order_id`. This means `orders` is purely structural — it records what the order is (which client, which tickets, which payment), while `order_status_history` records what happened to it. Neither table encodes the other's concern.
 
 ### Test Coverage
 
@@ -161,9 +161,17 @@ The `orders` table carries no `status` column. Current status is derived from `o
 
 ## Assumptions
 
-- **Fulfillment is hand-waved.** [`tryComplete()`](src/models/Order.ts#L61) is a stub — it represents transferring tickets to the buyer but does nothing. A robust system would require a dedicated fulfillment model and service handling inventory reservation, seat locking, and downstream confirmation. That service would still be orchestrated by `tryCheckout` as another participant in the checkout flow, keeping the coordination logic in one place.
-- **`NeedsAttention` alerting and resolution are out of scope.** The service correctly identifies and logs orders that require manual intervention, but surfacing them is not implemented. The right approach depends on who resolves them: for human agents, a `GET /orders?status=NeedsAttention` endpoint could feed a support queue polled by a recurring job — polling latency is negligible if resolution happens on human timescales. For automated agents, a pub-sub model could push directly into an event queue for immediate assignment.
-- **Simulation infrastructure is mixed into production stubs.** [`PaymentMethod`](src/models/PaymentMethod.ts#L6) and [`Order.tryComplete()`](src/models/Order.ts#L61) call [`throwIfSimulated()`](src/simulation.ts#L16) directly, which means error injection logic lives inside the production code path. The tests don't use this — they use Jest spies. The simulation system exists solely to power the browser-based demo UI. In a real service this would be extracted: either a separate injectable test double, or a middleware-level flag that never touches the core model code.
+#### Fulfillment is hand-waved
+
+[`tryComplete()`](src/models/Order.ts#L61) is a stub — it represents transferring tickets to the buyer but does nothing. A robust system would require a dedicated fulfillment model and service handling inventory reservation, seat locking, and downstream confirmation. That service would still be orchestrated by `tryCheckout` as another participant in the checkout flow, keeping the coordination logic in one place.
+
+#### `NeedsAttention` alerting and resolution are out of scope
+
+The service correctly identifies and logs orders that require manual intervention, but surfacing them is not implemented. The right approach depends on who resolves them: for human agents, a `GET /orders?status=NeedsAttention` endpoint could feed a support queue polled by a recurring job — polling latency is negligible if resolution happens on human timescales. For automated agents, a pub-sub model could push directly into an event queue for immediate assignment.
+
+#### Simulation infrastructure is mixed into production stubs
+
+[`PaymentMethod`](src/models/PaymentMethod.ts#L6) and [`Order.tryComplete()`](src/models/Order.ts#L61) call [`throwIfSimulated()`](src/simulation.ts#L16) directly, which means error injection logic lives inside the production code path. The tests don't use this — they use Jest spies. The simulation system exists solely to power the browser-based demo UI. In a real service this would be extracted: either a separate injectable test double, or a middleware-level flag that never touches the core model code.
 
 ---
 
@@ -195,11 +203,7 @@ Logging `PaymentAuthorized` immediately before attempting completion means the s
 
 #### Explicit [`VALID_TRANSITIONS`](src/models/OrderStatus.ts#L27) table
 
-Declaring valid transitions as a data structure has real advantages: the entire state machine is visible in one place, every `logStatus` call is uniformly gated by [`assertTransition`](src/models/OrderStatus.ts#L40) so invalid transitions fail loudly, and adding a new state requires only a new table entry rather than changes scattered across business logic. The table can also be unit-tested in isolation, independent of the checkout flow.
-
-The tradeoff is expressiveness. A data-driven table can only represent "from → to" edges — it has no way to encode the *conditions* under which a transition is valid. Guard clauses like "can only transition to `FraudReview` if the order value exceeds a threshold" or "void is only allowed if authorization happened within 24 hours" must live in the calling code, outside the table. This means the table is not a complete specification of the state machine; it's a partial one, and the rest is implicit in the surrounding logic.
-
-The alternative — encoding transitions implicitly in code, using TypeScript discriminated unions and exhaustive `switch` statements — can surface invalid transitions at compile time rather than runtime, and keeps each transition co-located with the conditions that trigger it. The cost is readability and maintainability: the full set of valid transitions is no longer visible in one place, and adding a new state requires auditing every `switch` block that might need to handle it. For a machine this size, either approach works; the table wins on clarity. At significantly higher complexity, a dedicated state machine library with the ability to handle guards and side-effects, such as XState, handles both.
+The table keeps the full state machine auditable in one place and uniformly gates every transition through [`assertTransition`](src/models/OrderStatus.ts#L40). The tradeoff is expressiveness: it can only encode "from → to" edges, not the conditions under which a transition is valid. Guards and side effects end up scattered across calling code rather than co-located with the transitions they govern. The alternative — explicit inline transition — keeps each transition co-located with its conditions but loses the at-a-glance auditability. At production scale, a dedicated state machine library like XState is the better choice: it models guards, entry/exit actions, and async flows as first-class concepts while keeping the machine visualizable and auditable.
 
 
 ---
