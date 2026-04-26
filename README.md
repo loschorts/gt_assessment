@@ -4,9 +4,23 @@ A TypeScript/Express service modeling an order state machine with stage-dependen
 
 ---
 
+## How to Run
+
+```bash
+npm install
+npm test       # run all tests
+npm run dev    # development server on :3000
+```
+
+The service uses SQLite with an in-memory database, so state does not persist across restarts. No external dependencies are required.
+
+A browser-based test UI is available at `http://localhost:3000` when the dev server is running.
+
+---
+
 ## What I Built
 
-A REST API that enforces a three-step checkout flow — initialization, payment authorization, and completion — where each failure mode triggers a different recovery path:
+A REST API that enforces a sequential checkout flow — initialization, payment authorization, and completion — where each failure mode triggers a different recovery path:
 
 - **Payment declined** → reject the order. No cleanup needed.
 - **Completion fails after payment authorized** → void the payment, mark as `Cancelled`.
@@ -102,6 +116,16 @@ A stub interface with two methods: `authorize()` and `void()`. Either can be con
 
 `POST /checkout` on a `NeedsAttention` order also returns `409`. Manual resolution is required before the order can proceed.
 
+### Data Storage
+
+Status transitions are stored in a dedicated append-only `order_status_history` table rather than a single `status` column on the orders row. This design has compounding benefits beyond what a flat field provides:
+
+- **Concurrency control.** In a multi-instance deployment, the latest row in `order_status_history` is the authoritative current state. Reads against an index on `(order_id, id DESC)` are fast enough to serve as a real-time gate before each checkout attempt. Combined with a DB-level lock (e.g. `SELECT ... FOR UPDATE` on the order row, or a `checkout_locks` table), this provides a reliable serialization point — a second concurrent checkout reads the committed status before it can write, so it either blocks or fails fast rather than racing silently.
+
+- **Troubleshooting `NeedsAttention` orders.** When an order reaches `NeedsAttention`, the full history shows exactly which statuses preceded it and when, giving a resolving agent a self-contained audit trail without querying external systems. The proposed `message` field (see What I'd Do Differently) would further capture the error type and payment provider response at each step.
+
+- **Systemic health monitoring.** Aggregating across the table surfaces patterns that single-order views miss: a spike in `PaymentDeclined` may indicate a payment provider degradation; a spike in `NeedsAttention` points to a completion service outage; an elevated `Cancelled` rate suggests the void path is working but completion is unreliable. These signals are available for free once the data is in a queryable table.
+
 ### Test Coverage
 
 | Scenario | Final Status | Alert? |
@@ -116,21 +140,7 @@ A stub interface with two methods: `authorize()` and `void()`. Either can be con
 
 ---
 
-## How to Run
 
-```bash
-npm install
-npm run dev    # development server on :3000
-npm test       # run all tests
-npm run build  # compile TypeScript
-npm start      # run compiled output
-```
-
-The service uses SQLite with an in-memory database, so state does not persist across restarts. No external dependencies are required.
-
-A browser-based test UI is available at `http://localhost:3000` when the dev server is running.
-
----
 
 ## Tradeoffs
 
