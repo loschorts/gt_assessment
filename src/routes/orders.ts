@@ -52,7 +52,7 @@ router.post('/:orderId/checkout', async (req: Request, res: Response) => {
     status = await order.tryCheckout(payment, paymentId)
   } catch (e) {
     if (e instanceof CheckoutNotAllowedError) {
-      return res.status(409).json({ status: e.currentStatus })
+      return res.status(409).json({ status: e.currentStatus, error: e.message })
     }
     if (e instanceof InvalidTransitionError) {
       return res.status(409).json({ status: e.currentStatus, attemptedStatus: e.attemptedStatus })
