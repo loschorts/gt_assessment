@@ -23,6 +23,26 @@ A REST API that enforces a three-step checkout flow — initialization, payment 
 | `NeedsAttention` | Completion failed and void also failed |
 | `Complete` | Order successfully fulfilled |
 
+```mermaid
+stateDiagram-v2
+    [*] --> Initialized
+
+    Initialized --> PaymentAuthorized : authorize succeeds
+    Initialized --> PaymentDeclined : authorize fails
+
+    PaymentAuthorized --> Complete : completion succeeds
+    PaymentAuthorized --> Cancelled : completion fails, void succeeds
+    PaymentAuthorized --> NeedsAttention : completion fails, void fails
+
+    PaymentDeclined --> PaymentAuthorized : retry
+    PaymentDeclined --> PaymentDeclined : retry, authorize fails again
+    Cancelled --> PaymentAuthorized : retry
+    Cancelled --> PaymentDeclined : retry, authorize fails
+
+    Complete --> [*]
+    NeedsAttention --> [*]
+```
+
 Valid transitions are declared in a single `VALID_TRANSITIONS` table in `OrderStatus.ts`. `Order.tryCheckout()` consults the table rather than implementing ad-hoc guards — the state machine is auditable at a glance and new states are cheap to add.
 
 `PaymentDeclined` and `Cancelled` are retryable. `NeedsAttention` and `Complete` are terminal.
