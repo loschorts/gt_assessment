@@ -169,10 +169,6 @@ The `orders` table carries no `status` column. Current status is derived from `o
 
 When an order reaches `NeedsAttention`, [`fireAlert()`](src/alerts.ts#L1) is called immediately. The stub logs to `console.warn`; in production it would enqueue to a support ticket system. Resolution itself is not implemented — the right approach depends on who resolves the order: for human agents, a `GET /orders?status=NeedsAttention` endpoint could feed a support queue polled by a recurring job — polling latency is negligible if resolution happens on human timescales. For automated agents, a pub-sub model could push directly into an event queue for immediate assignment.
 
-#### Simulation infrastructure is mixed into production stubs
-
-[`PaymentMethod`](src/models/PaymentMethod.ts#L6) and [`Order.tryComplete()`](src/models/Order.ts#L61) call [`throwIfSimulated()`](src/simulation.ts#L16) directly, which means error injection logic lives inside the production code path. The tests don't use this — they use Jest spies. The simulation system exists solely to power the browser-based demo UI. In a real service this would be extracted: either a separate injectable test double, or a middleware-level flag that never touches the core model code.
-
 ---
 
 ## Tradeoffs
@@ -225,6 +221,10 @@ Adding a `previous_status` column to the [`order_status_history`](src/database.t
 #### Payment attempt log
 
 The [`orders`](src/database.ts#L10) table holds a single `payment_id`, which is overwritten on each retry. That means only the most recent payment ID survives — earlier authorization attempts on declined or cancelled orders are lost. A separate `payment_attempts` table (columns: `order_id`, `payment_id`, `created_at`) would preserve the full history of which payment methods were tried and when. This is useful for fraud detection (repeated attempts across payment IDs), support triage (correlating a charge on the provider's side with the order that produced it), and auditing retried orders where the customer switched payment methods between attempts.
+
+#### Extract simulation infrastructure from production code
+
+[`PaymentMethod`](src/models/PaymentMethod.ts#L6) and [`Order.tryComplete()`](src/models/Order.ts#L61) call [`throwIfSimulated()`](src/simulation.ts#L16) directly, which means error injection logic lives inside the production code path. The tests don't use this — they use Jest spies. The simulation system exists solely to power the browser-based demo UI. In a real service this would be extracted: either a separate injectable test double, or a middleware-level flag that never touches the core model code.
 
 #### Status transition messages
 
