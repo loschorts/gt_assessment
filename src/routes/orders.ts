@@ -4,7 +4,7 @@ import Order from '../models/Order'
 import PaymentMethod from '../models/PaymentMethod'
 import OrderStatus from '../models/OrderStatus'
 import * as db from '../db'
-import { InvalidTransitionError, OrderNotInitializedError } from '../errors'
+import { InvalidTransitionError, CheckoutNotAllowedError, OrderNotInitializedError } from '../errors'
 
 const router = Router()
 
@@ -51,6 +51,9 @@ router.post('/:orderId/checkout', async (req: Request, res: Response) => {
   try {
     status = await order.tryCheckout(payment, paymentId)
   } catch (e) {
+    if (e instanceof CheckoutNotAllowedError) {
+      return res.status(409).json({ status: e.currentStatus })
+    }
     if (e instanceof InvalidTransitionError) {
       return res.status(409).json({ status: e.currentStatus, attemptedStatus: e.attemptedStatus })
     }

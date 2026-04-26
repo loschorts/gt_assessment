@@ -174,7 +174,7 @@ describe('POST /orders/:orderId/checkout — order creation and state transition
     expect(res.status).toBe(400)
   })
 
-  test('re-checkout already-processed order → 409', async () => {
+  test('re-checkout Complete order → 409 with current status, no attemptedStatus', async () => {
     const orderId = await createOrder()
     await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-1' })
 
@@ -183,6 +183,8 @@ describe('POST /orders/:orderId/checkout — order creation and state transition
       .send({ paymentId: 'pay-2' })
 
     expect(res.status).toBe(409)
+    expect(res.body.status).toBe(OrderStatus.Complete)
+    expect(res.body.attemptedStatus).toBeUndefined()
   })
 
   test('re-checkout after PaymentDeclined → allowed, not 409', async () => {
@@ -209,7 +211,7 @@ describe('POST /orders/:orderId/checkout — order creation and state transition
     expect(res.status).not.toBe(409)
   })
 
-  test('re-checkout after NeedsAttention → blocked, 409', async () => {
+  test('re-checkout after NeedsAttention → 409 with current status, no attemptedStatus', async () => {
     jest.spyOn(Order.prototype, 'tryComplete').mockRejectedValueOnce(new CompletionFailedError())
     jest.spyOn(PaymentMethod.prototype, 'void').mockRejectedValueOnce(new PaymentUnvoidableError())
     const orderId = await createOrder()
@@ -221,6 +223,7 @@ describe('POST /orders/:orderId/checkout — order creation and state transition
 
     expect(res.status).toBe(409)
     expect(res.body.status).toBe(OrderStatus.NeedsAttention)
+    expect(res.body.attemptedStatus).toBeUndefined()
   })
 
   test('calls tryComplete when authorize succeeds', async () => {

@@ -2,7 +2,7 @@ import { clearAll } from '../src/db'
 import Order from '../src/models/Order'
 import PaymentMethod from '../src/models/PaymentMethod'
 import OrderStatus from '../src/models/OrderStatus'
-import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError } from '../src/errors'
+import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError, CheckoutNotAllowedError } from '../src/errors'
 import * as alerts from '../src/alerts'
 
 describe('Order', () => {
@@ -195,6 +195,34 @@ describe('Order', () => {
       for (let i = 1; i < history.length; i++) {
         expect(history[i].createdAt.getTime()).toBeGreaterThanOrEqual(history[i - 1].createdAt.getTime())
       }
+    })
+  })
+
+  describe('assertCheckoutAllowed()', () => {
+    test('throws CheckoutNotAllowedError on Complete order', async () => {
+      await order.tryCheckout(payment, 'pay-1')
+      await expect(order.tryCheckout(payment, 'pay-2')).rejects.toThrow(CheckoutNotAllowedError)
+    })
+
+    test('throws CheckoutNotAllowedError on NeedsAttention order', async () => {
+      completeSpy.mockRejectedValue(new CompletionFailedError())
+      voidSpy.mockRejectedValue(new PaymentUnvoidableError())
+      await order.tryCheckout(payment, 'pay-1')
+      await expect(order.tryCheckout(payment, 'pay-2')).rejects.toThrow(CheckoutNotAllowedError)
+    })
+
+    test('error carries the blocking status', async () => {
+      await order.tryCheckout(payment, 'pay-1')
+      const err = await order.tryCheckout(payment, 'pay-2').catch(e => e)
+      expect(err).toBeInstanceOf(CheckoutNotAllowedError)
+      expect(err.currentStatus).toBe(OrderStatus.Complete)
+    })
+
+    test('does not call authorize when checkout is blocked', async () => {
+      await order.tryCheckout(payment, 'pay-1')
+      authorizeSpy.mockClear()
+      await order.tryCheckout(payment, 'pay-2').catch(() => {})
+      expect(authorizeSpy).not.toHaveBeenCalled()
     })
   })
 })

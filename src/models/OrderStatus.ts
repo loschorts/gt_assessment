@@ -1,4 +1,4 @@
-import { InvalidTransitionError } from '../errors'
+import { InvalidTransitionError, CheckoutNotAllowedError } from '../errors'
 
 enum OrderStatus {
   Initialized = 'Initialized',
@@ -37,6 +37,16 @@ export function canTransition(from: OrderStatus, to: OrderStatus): boolean {
 
 export function assertTransition(from: OrderStatus, to: OrderStatus): void {
   if (!canTransition(from, to)) throw new InvalidTransitionError(from, to)
+}
+
+const CHECKOUT_ALLOWED = new Set([
+  OrderStatus.Initialized,
+  OrderStatus.PaymentDeclined,
+  OrderStatus.Cancelled,
+])
+
+export function assertCheckoutAllowed(status: OrderStatus): void {
+  if (!CHECKOUT_ALLOWED.has(status)) throw new CheckoutNotAllowedError(status)
 }
 
 export default OrderStatus

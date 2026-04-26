@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
-import OrderStatus, { assertTransition } from './OrderStatus'
+import OrderStatus, { assertTransition, assertCheckoutAllowed } from './OrderStatus'
 import PaymentMethod from './PaymentMethod'
 import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError, OrderNotInitializedError } from '../errors'
 import { getDb } from '../database'
@@ -71,7 +71,7 @@ class Order {
 
   async tryCheckout(payment: PaymentMethod, paymentId: string): Promise<OrderStatus> {
     let currentStatus = await this.getStatus()
-    assertTransition(currentStatus, OrderStatus.PaymentAuthorized)
+    assertCheckoutAllowed(currentStatus)
 
     this.paymentId = paymentId
     await db.savePaymentId(this.id, paymentId)
