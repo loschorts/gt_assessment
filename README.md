@@ -138,13 +138,7 @@ A stub interface with two methods: [`authorize()`](src/models/PaymentMethod.ts#L
 
 ### Data Storage
 
-Status transitions are stored in a dedicated append-only [`order_status_history`](src/database.ts#L17) table rather than a single `status` column on the [`orders`](src/database.ts#L10) row. This design has compounding benefits beyond what a flat field provides:
-
-- **Concurrency control.** In a multi-instance deployment, the latest row in `order_status_history` is the authoritative current state. Reads against an index on `(order_id, id DESC)` are fast enough to serve as a real-time gate before each checkout attempt. Combined with a DB-level lock (e.g. `SELECT ... FOR UPDATE` on the order row, or a `checkout_locks` table), this provides a reliable serialization point — a second concurrent checkout reads the committed status before it can write, so it either blocks or fails fast rather than racing silently.
-
-- **Troubleshooting `NeedsAttention` orders.** When an order reaches `NeedsAttention`, the full history shows exactly which statuses preceded it and when, giving a resolving agent a self-contained audit trail without querying external systems. The proposed `message` field (see What I'd Do Differently) would further capture the error type and payment provider response at each step.
-
-- **Systemic health monitoring.** Aggregating across the table surfaces patterns that single-order views miss: a spike in `PaymentDeclined` may indicate a payment provider degradation; a spike in `NeedsAttention` points to a completion service outage; an elevated `Cancelled` rate suggests the void path is working but completion is unreliable. These signals are available for free once the data is in a queryable table.
+Status transitions are stored in a dedicated append-only [`order_status_history`](src/database.ts#L17) table rather than a single `status` column on the [`orders`](src/database.ts#L10) row.
 
 ### Test Coverage
 
@@ -173,7 +167,10 @@ The alternative is choreography, where each participant reacts to events indepen
 
 A conventional alternative to placing the orchestrator on the model is a dedicated service layer — a `CheckoutService` that coordinates `Order` and `PaymentMethod` while keeping the model focused on state. That separation becomes worthwhile as the flow grows and `tryCheckout` accumulates more dependencies and branching. At this scale it would add abstraction without pulling its weight.
 
-**SQLite over plain in-memory structures.** Even though the database is in-memory (`:memory:`), using SQLite gives the status history a real relational model with timestamps, ordered rows, and indexed lookups. The schema makes the audit trail queryable and the storage layer easy to swap for a persistent DB later.
+**SQLite over plain in-memory structures.** Even though the database is in-memory (`:memory:`), using SQLite gives the status history a real relational model with timestamps, ordered rows, and indexed lookups. The schema makes the audit trail queryable and the storage layer easy to swap for a persistent DB later. Storing status transitions in a dedicated append-only [`order_status_history`](src/database.ts#L17) table rather than a single `status` column has compounding advantages over a flat field:
+
+- **Troubleshooting `NeedsAttention` orders.** The full history shows exactly which statuses preceded it and when, giving a resolving agent a self-contained audit trail without querying external systems.
+- **Systemic health monitoring.** Aggregating across the table surfaces patterns that single-order views miss: a spike in `PaymentDeclined` may indicate a payment provider degradation; a spike in `NeedsAttention` points to a completion service outage; an elevated `Cancelled` rate suggests the void path is working but completion is unreliable.
 
 **Serialized payment + completion processing.** Payment authorization and order completion run sequentially in a single request. This preserves transaction integrity at the cost of some latency, which is the right tradeoff: a checkout where a charge and a ticket transfer are partially applied is a harder problem than a slightly slower checkout.
 
