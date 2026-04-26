@@ -74,7 +74,7 @@ Valid transitions are declared in a single [`VALID_TRANSITIONS`](src/models/Orde
 
 `PaymentDeclined` and `Cancelled` are retryable. `NeedsAttention` and `Complete` are terminal; i.e. the user cannot attempt a subsequent checkout on the order (until the issue is resolved).
 
-`PaymentAuthorized` is a transitional status logged for diagnostic value. Without it, a resolving agent would have to query the payment provider directly to determine whether a charge is outstanding. It is not a stable resting state: the order moves through it immediately to `Complete`, `Cancelled`, or `NeedsAttention` within the same request. On retry, a fresh authorization is always issued — resuming a stale one risks acting on a charge that has already expired or been reversed.
+`PaymentAuthorized` is a transitional status, not a stable resting state: the order moves through it immediately to `Complete`, `Cancelled`, or `NeedsAttention` within the same request. On retry, a fresh authorization is always issued — resuming a stale one risks acting on a charge that has already expired or been reversed.
 
 ### Checkout Logic
 
@@ -196,11 +196,6 @@ Storing each transition as a new row rather than overwriting a `status` column o
 #### Serialized payment + completion processing
 
 Payment authorization and order completion run sequentially in a single request. This preserves transaction integrity at the cost of some latency, which is the right tradeoff: a checkout where a charge and a ticket transfer are partially applied is a harder problem to resolve than a slightly slower checkout; if concurrency is required, more fine-grained intermediates states can be created to improve state machine accuracy.
-
-#### `PaymentAuthorized` as a transitional status
-
-Logging `PaymentAuthorized` immediately before attempting completion means the status history alone is sufficient to determine whether a charge is outstanding on a failed order. The alternative — inferring authorization from the presence of a `paymentId` — requires cross-referencing the payment provider.
-
 
 ---
 
