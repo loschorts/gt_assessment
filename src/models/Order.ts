@@ -59,6 +59,7 @@ class Order {
     return rows.map(r => ({ status: r.status as OrderStatus, createdAt: new Date(r.created_at) }))
   }
 
+  // public to allow jest.spyOn in tests; injecting a fulfillment dependency would eliminate this
   async tryComplete(): Promise<void> {
     throwIfSimulated(CompletionFailedError)
   }

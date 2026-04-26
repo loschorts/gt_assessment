@@ -47,6 +47,8 @@ export function assertTransition(from: OrderStatus, to: OrderStatus): void {
   if (!canTransition(from, to)) throw new InvalidTransitionError(from, to)
 }
 
+// Distinct from assertTransition: fires before payment.authorize() runs, so an ineligible
+// order never reaches the payment provider.
 export function assertCheckoutAllowed(status: OrderStatus): void {
   if (!CHECKOUT_ALLOWED.has(status)) throw new CheckoutNotAllowedError(status)
 }

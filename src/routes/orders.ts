@@ -63,6 +63,8 @@ router.post('/:orderId/checkout', async (req: Request, res: Response) => {
     throw e
   }
 
+  // 422 for processed-but-failed outcomes (PaymentDeclined, Cancelled, NeedsAttention):
+  // the request was valid, but the order did not complete. Caller reads status for the outcome.
   const httpStatus = status === OrderStatus.Complete ? 200 : 422
   return res.status(httpStatus).json({ status })
 })
