@@ -177,6 +177,10 @@ The service correctly identifies and logs orders that require manual interventio
 
 ## Tradeoffs
 
+#### Explicit [`VALID_TRANSITIONS`](src/models/OrderStatus.ts#L27) table
+
+The table keeps the full state machine auditable in one place and uniformly gates every transition through [`assertTransition`](src/models/OrderStatus.ts#L40). The tradeoff is expressiveness: it can only encode "from → to" edges, not the conditions under which a transition is valid. Guards and side effects end up scattered across calling code rather than co-located with the transitions they govern. The alternative — explicit inline transition — keeps each transition co-located with its conditions but loses the at-a-glance auditability. At production scale, a dedicated state machine library like XState is the better choice: it models guards, entry/exit actions, and async flows as first-class concepts while keeping the machine visualizable and auditable.
+
 #### Orchestration over choreography
 
 [`Order.tryCheckout()`](src/models/Order.ts#L71) acts as an orchestrator: it owns the full checkout sequence, calls each participant ([`PaymentMethod`](src/models/PaymentMethod.ts#L6), [`tryComplete`](src/models/Order.ts#L61)) directly, and decides what to do based on the result. The participants are stateless and unaware of each other or the broader workflow.
@@ -200,10 +204,6 @@ Payment authorization and order completion run sequentially in a single request.
 #### `PaymentAuthorized` as a transitional status
 
 Logging `PaymentAuthorized` immediately before attempting completion means the status history alone is sufficient to determine whether a charge is outstanding on a failed order. The alternative — inferring authorization from the presence of a `paymentId` — requires cross-referencing the payment provider.
-
-#### Explicit [`VALID_TRANSITIONS`](src/models/OrderStatus.ts#L27) table
-
-The table keeps the full state machine auditable in one place and uniformly gates every transition through [`assertTransition`](src/models/OrderStatus.ts#L40). The tradeoff is expressiveness: it can only encode "from → to" edges, not the conditions under which a transition is valid. Guards and side effects end up scattered across calling code rather than co-located with the transitions they govern. The alternative — explicit inline transition — keeps each transition co-located with its conditions but loses the at-a-glance auditability. At production scale, a dedicated state machine library like XState is the better choice: it models guards, entry/exit actions, and async flows as first-class concepts while keeping the machine visualizable and auditable.
 
 
 ---
