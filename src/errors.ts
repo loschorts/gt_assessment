@@ -20,8 +20,8 @@ export class PaymentUnvoidableError extends Error {
 }
 
 export class InvalidTransitionError extends Error {
-  constructor(public readonly currentStatus: string) {
-    super(`Invalid transition from status: ${currentStatus}`)
+  constructor(public readonly currentStatus: string, public readonly attemptedStatus: string) {
+    super(`Invalid transition from ${currentStatus} to ${attemptedStatus}`)
     this.name = 'InvalidTransitionError'
   }
 }

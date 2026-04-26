@@ -9,8 +9,6 @@ enum OrderStatus {
   Complete = 'Complete',
 }
 
-const TERMINAL: OrderStatus[] = []
-
 // States reachable on checkout entry: authorize succeeds or fails
 const CHECKOUT_START: OrderStatus[] = [
   OrderStatus.PaymentAuthorized,
@@ -29,8 +27,8 @@ export const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   [OrderStatus.PaymentAuthorized]: CHECKOUT_OUTCOMES,
   [OrderStatus.PaymentDeclined]:   CHECKOUT_START,
   [OrderStatus.Cancelled]:         CHECKOUT_START,
-  [OrderStatus.NeedsAttention]:    TERMINAL,
-  [OrderStatus.Complete]:          TERMINAL,
+  [OrderStatus.NeedsAttention]:    [],
+  [OrderStatus.Complete]:          [],
 }
 
 export function canTransition(from: OrderStatus, to: OrderStatus): boolean {
@@ -38,7 +36,7 @@ export function canTransition(from: OrderStatus, to: OrderStatus): boolean {
 }
 
 export function assertTransition(from: OrderStatus, to: OrderStatus): void {
-  if (!canTransition(from, to)) throw new InvalidTransitionError(from)
+  if (!canTransition(from, to)) throw new InvalidTransitionError(from, to)
 }
 
 export default OrderStatus
