@@ -222,6 +222,10 @@ Adding a `status` column to the [`orders`](src/database.ts#L10) table, kept in s
 
 Adding a `previous_status` column to the [`order_status_history`](src/database.ts#L17) table would make each row a complete record of the transition — what state the order was in, and what state it moved to. Under concurrent writes, two requests can both read the same current status, both pass [`assertTransition`](src/models/OrderStatus.ts#L40), and both write successfully. The resulting history looks valid row by row but the sequence is corrupt: the same "from" state appears twice, revealing the race. Without `previous_status`, the anomaly is invisible — you only see a list of states with no record of what preceded each one. With it, a query for rows where `previous_status != lag(status)` surfaces the inconsistency immediately. It also enables integrity checks at write time: an insert trigger or application-layer check could reject a row whose `previous_status` doesn't match the most recent `status` for that order, turning a silent data corruption into a loud failure.
 
+#### Payment attempt log
+
+The [`orders`](src/database.ts#L10) table holds a single `payment_id`, which is overwritten on each retry. That means only the most recent payment ID survives — earlier authorization attempts on declined or cancelled orders are lost. A separate `payment_attempts` table (columns: `order_id`, `payment_id`, `created_at`) would preserve the full history of which payment methods were tried and when. This is useful for fraud detection (repeated attempts across payment IDs), support triage (correlating a charge on the provider's side with the order that produced it), and auditing retried orders where the customer switched payment methods between attempts.
+
 #### Status transition messages
 
 Each `order_status_history` row could carry an optional `message` field — the payment provider's decline code on `PaymentDeclined`, the error type on `NeedsAttention`, a correlation ID on `Cancelled`. This makes the history self-contained for diagnostics and support triage without requiring a separate log query.
