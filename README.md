@@ -93,6 +93,8 @@ LogStatus(Complete)
 return Complete
 ```
 
+The full implementation is in [`Order.tryCheckout()`](src/models/Order.ts#L71). `tryCheckout` acts as an orchestrator for the checkout flow — `Order` is the aggregate root, so placing the coordination logic on the model keeps the call site natural (`order.tryCheckout(payment, paymentId)`) and the tests clean. At production scale a separate `CheckoutService` would be advantageous for decoupling data modeling and orchestration concerns.
+
 ### Models
 
 #### `Order`
@@ -144,15 +146,13 @@ Status transitions are stored in a dedicated append-only `order_status_history` 
 
 ## Tradeoffs
 
-**SQLite over plain in-memory structures.** Even though the database is in-memory (`:memory:`), using SQLite gives the status history a real relational model with timestamps, ordered rows, and indexed lookups. The schema makes the audit trail queryable and the storage layer easy to swap for a persistent DB later.
-
 **Orchestration over choreography.** `Order.tryCheckout()` is an orchestrator: it owns the full checkout sequence, calls each participant (`PaymentMethod`, `tryComplete`) directly, and decides what to do based on the result. The participants are stateless and unaware of each other or the broader workflow.
 
-The alternative is choreography, where each participant reacts to events independently — a completion service listens for `PaymentAuthorized`, a void service listens for `CompletionFailed`, a status service listens to everything. There's no central coordinator; the flow is implicit in the event topology.
+The alternative is choreography, where each participant reacts to events independently — a completion service listens for `PaymentAuthorized`, a void service listens for `CompletionFailed`, a status service listens to everything. There's no central coordinator; the flow is implicit in the event topology. Choreography scales better and decouples services, but reconstructing why an order reached `NeedsAttention` means tracing events across multiple consumers. Orchestration keeps the failure recovery logic explicit and in one place, which makes it straightforward to read, test, and reason about.
 
-Choreography scales better and decouples services, but the tradeoff is observability. In a choreographed system, reconstructing why an order reached `NeedsAttention` means tracing events across multiple consumers. Debugging a race or a missed event requires understanding the full topology, not just one function. Orchestration keeps the flow explicit and in one place, which makes the failure recovery logic in `tryCheckout` straightforward to read, test, and reason about. For a flow with strict ordering and meaningful recovery at each step, that clarity outweighs the coupling cost.
+A conventional alternative to placing the orchestrator on the model is a dedicated service layer — a `CheckoutService` that coordinates `Order` and `PaymentMethod` while keeping the model focused on state. That separation becomes worthwhile as the flow grows and `tryCheckout` accumulates more dependencies and branching. At this scale it would add abstraction without pulling its weight.
 
-A secondary question is where the orchestrator lives. Placing it on the `Order` model is convenient — `Order` is the aggregate root of the flow, so `order.tryCheckout(payment, paymentId)` reads naturally and the tests are clean. The cost is that the model now depends on `PaymentMethod`, an external collaborator, and carries business process logic alongside domain state logic. As the flow grows, `tryCheckout` accumulates more dependencies and more branching, making `Order` harder to reason about in isolation. The conventional remedy is a service layer — a `CheckoutService` that coordinates `Order` and `PaymentMethod` while keeping the model focused on state. At this scale that separation would add abstraction without pulling its weight, so the orchestrator stays on the model.
+**SQLite over plain in-memory structures.** Even though the database is in-memory (`:memory:`), using SQLite gives the status history a real relational model with timestamps, ordered rows, and indexed lookups. The schema makes the audit trail queryable and the storage layer easy to swap for a persistent DB later.
 
 **Serialized payment + completion processing.** Payment authorization and order completion run sequentially in a single request. This preserves transaction integrity at the cost of some latency, which is the right tradeoff: a checkout where a charge and a ticket transfer are partially applied is a harder problem than a slightly slower checkout.
 
