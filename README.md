@@ -81,27 +81,32 @@ Valid transitions are declared in a single [`VALID_TRANSITIONS`](src/models/Orde
 ```
 tryCheckout(payment, paymentId) → OrderStatus
 
-if !canTransition(currentStatus, PaymentAuthorized):
-  throw InvalidTransitionError
+assertTransition(currentStatus, PaymentAuthorized)  // early exit -- checkout not attempted
 
 try:
   payment.authorize()
+  assertTransition(currentStatus, PaymentAuthorized)
   LogStatus(PaymentAuthorized)
+  currentStatus ← PaymentAuthorized
   tryComplete()
 
 catch PaymentDeclined:
+  assertTransition(currentStatus, PaymentDeclined)
   LogStatus(PaymentDeclined)
   return PaymentDeclined
 
 catch CompletionFailed:
   try:
     payment.void()
+    assertTransition(currentStatus, Cancelled)  // currentStatus = PaymentAuthorized
     LogStatus(Cancelled)
     return Cancelled
   catch:
+    assertTransition(currentStatus, NeedsAttention)  // currentStatus = PaymentAuthorized
     LogStatus(NeedsAttention)
     return NeedsAttention
 
+assertTransition(currentStatus, Complete)  // currentStatus = PaymentAuthorized
 LogStatus(Complete)
 return Complete
 ```
