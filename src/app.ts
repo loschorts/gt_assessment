@@ -10,10 +10,6 @@ if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.resolve(process.cwd(), 'dist/client')))
 }
 
-app.get('/devconsole', (_req, res) => {
-  res.sendFile(path.resolve(process.cwd(), 'public/index.html'))
-})
-
 app.use('/orders', ordersRouter)
 app.use('/debug', debugRouter)
 
