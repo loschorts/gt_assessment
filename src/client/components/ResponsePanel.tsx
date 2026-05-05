@@ -1,4 +1,4 @@
-import { ResponseData } from './types'
+import { ResponseData } from '../types'
 
 interface Props {
   response: ResponseData | null

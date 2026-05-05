@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ResponseData } from './types'
+import { ResponseData } from '../types'
 
 interface Props {
   onSuccess: (response: ResponseData) => void

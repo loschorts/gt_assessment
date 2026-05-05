@@ -1,5 +1,5 @@
 import Badge from './Badge'
-import { Order } from './types'
+import { Order } from '../types'
 
 function shortId(id: string) {
   return id ? id.slice(0, 8) + '…' : '—'

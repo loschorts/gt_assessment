@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ResponseData } from './types'
+import { ResponseData } from '../types'
 
 interface Props {
   selectedOrderId: string | null

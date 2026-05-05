@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
-import CreateOrderForm from './CreateOrderForm'
-import CheckoutForm from './CheckoutForm'
-import GetStatusForm from './GetStatusForm'
-import ResponsePanel from './ResponsePanel'
-import OrdersTable from './OrdersTable'
-import StatusHistoryTable from './StatusHistoryTable'
-import SimulationPanel from './SimulationPanel'
-import { DbState, ResponseData } from './types'
+import CreateOrderForm from '../components/CreateOrderForm'
+import CheckoutForm from '../components/CheckoutForm'
+import GetStatusForm from '../components/GetStatusForm'
+import ResponsePanel from '../components/ResponsePanel'
+import OrdersTable from '../components/OrdersTable'
+import StatusHistoryTable from '../components/StatusHistoryTable'
+import SimulationPanel from '../components/SimulationPanel'
+import { DbState, ResponseData } from '../types'
 
 const EMPTY_DB: DbState = { orders: [], statusHistory: [] }
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import Badge from './Badge'
-import { ResponseData } from './types'
+import { ResponseData } from '../types'
 
 interface Props {
   selectedOrderId: string | null
