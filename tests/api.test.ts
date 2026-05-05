@@ -4,7 +4,7 @@ import * as db from '../src/db'
 import Order from '../src/models/Order'
 import PaymentMethod from '../src/models/PaymentMethod'
 import OrderStatus from '../src/models/OrderStatus'
-import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError } from '../src/errors'
+import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError, InventoryNotAvailableError } from '../src/errors'
 import * as alerts from '../src/alerts'
 
 beforeEach(async () => {
@@ -13,6 +13,7 @@ beforeEach(async () => {
   // Default: payment and fulfillment succeed
   jest.spyOn(PaymentMethod.prototype, 'authorize').mockResolvedValue()
   jest.spyOn(PaymentMethod.prototype, 'void').mockResolvedValue()
+  jest.spyOn(Order.prototype, 'checkInventory').mockResolvedValue()
   jest.spyOn(Order.prototype, 'tryComplete').mockResolvedValue()
   jest.spyOn(alerts, 'fireAlert').mockImplementation(() => {})
 })
@@ -377,13 +378,13 @@ describe('GET /orders/:orderId/status', () => {
     })
   })
 
-  test('history sequence on success: Initialized → PaymentAuthorized → Complete', async () => {
+  test('history sequence on success: Initialized → PaymentAuthorized → CheckingInventory → Complete', async () => {
     const { body: { orderId } } = await request(app).post('/orders').send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
     await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
 
     const res = await request(app).get(`/orders/${orderId}/status`)
     expect(res.body.history.map((e: { status: string }) => e.status)).toEqual([
-      OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.Complete,
+      OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.CheckingInventory, OrderStatus.Complete,
     ])
   })
 
@@ -398,18 +399,18 @@ describe('GET /orders/:orderId/status', () => {
     ])
   })
 
-  test('history sequence on Cancelled: Initialized → PaymentAuthorized → Cancelled', async () => {
+  test('history sequence on Cancelled (completion fails): Initialized → PaymentAuthorized → CheckingInventory → Cancelled', async () => {
     jest.spyOn(Order.prototype, 'tryComplete').mockRejectedValue(new CompletionFailedError())
     const { body: { orderId } } = await request(app).post('/orders').send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
     await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
 
     const res = await request(app).get(`/orders/${orderId}/status`)
     expect(res.body.history.map((e: { status: string }) => e.status)).toEqual([
-      OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.Cancelled,
+      OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.CheckingInventory, OrderStatus.Cancelled,
     ])
   })
 
-  test('history sequence on NeedsAttention: Initialized → PaymentAuthorized → NeedsAttention', async () => {
+  test('history sequence on NeedsAttention (completion fails): Initialized → PaymentAuthorized → CheckingInventory → NeedsAttention', async () => {
     jest.spyOn(Order.prototype, 'tryComplete').mockRejectedValue(new CompletionFailedError())
     jest.spyOn(PaymentMethod.prototype, 'void').mockRejectedValue(new PaymentUnvoidableError())
     const { body: { orderId } } = await request(app).post('/orders').send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
@@ -417,7 +418,51 @@ describe('GET /orders/:orderId/status', () => {
 
     const res = await request(app).get(`/orders/${orderId}/status`)
     expect(res.body.history.map((e: { status: string }) => e.status)).toEqual([
-      OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.NeedsAttention,
+      OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.CheckingInventory, OrderStatus.NeedsAttention,
+    ])
+  })
+
+  test('inventory unavailable, void succeeds → Cancelled', async () => {
+    jest.spyOn(Order.prototype, 'checkInventory').mockRejectedValue(new InventoryNotAvailableError())
+    const { body: { orderId } } = await request(app).post('/orders').send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
+
+    const res = await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    expect(res.status).toBe(422)
+    expect(res.body.status).toBe(OrderStatus.Cancelled)
+  })
+
+  test('history sequence on Cancelled (inventory unavailable): Initialized → PaymentAuthorized → CheckingInventory → InventoryNotAvailable → Cancelled', async () => {
+    jest.spyOn(Order.prototype, 'checkInventory').mockRejectedValue(new InventoryNotAvailableError())
+    const { body: { orderId } } = await request(app).post('/orders').send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    const res = await request(app).get(`/orders/${orderId}/status`)
+    expect(res.body.history.map((e: { status: string }) => e.status)).toEqual([
+      OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.CheckingInventory, OrderStatus.InventoryNotAvailable, OrderStatus.Cancelled,
+    ])
+  })
+
+  test('inventory unavailable, void also fails → NeedsAttention', async () => {
+    jest.spyOn(Order.prototype, 'checkInventory').mockRejectedValue(new InventoryNotAvailableError())
+    jest.spyOn(PaymentMethod.prototype, 'void').mockRejectedValue(new PaymentUnvoidableError())
+    const { body: { orderId } } = await request(app).post('/orders').send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
+
+    const res = await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    expect(res.status).toBe(422)
+    expect(res.body.status).toBe(OrderStatus.NeedsAttention)
+  })
+
+  test('history sequence on NeedsAttention (inventory unavailable): Initialized → PaymentAuthorized → CheckingInventory → InventoryNotAvailable → NeedsAttention', async () => {
+    jest.spyOn(Order.prototype, 'checkInventory').mockRejectedValue(new InventoryNotAvailableError())
+    jest.spyOn(PaymentMethod.prototype, 'void').mockRejectedValue(new PaymentUnvoidableError())
+    const { body: { orderId } } = await request(app).post('/orders').send({ clientId: 'client-1', ticketIds: ['ticket-1'] })
+    await request(app).post(`/orders/${orderId}/checkout`).send({ paymentId: 'pay-123' })
+
+    const res = await request(app).get(`/orders/${orderId}/status`)
+    expect(res.body.history.map((e: { status: string }) => e.status)).toEqual([
+      OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.CheckingInventory, OrderStatus.InventoryNotAvailable, OrderStatus.NeedsAttention,
     ])
   })
 

@@ -3,6 +3,8 @@ import { InvalidTransitionError, CheckoutNotAllowedError } from '../errors'
 enum OrderStatus {
   Initialized = 'Initialized',
   PaymentAuthorized = 'PaymentAuthorized',
+  CheckingInventory = 'CheckingInventory',
+  InventoryNotAvailable = 'InventoryNotAvailable',
   PaymentDeclined = 'PaymentDeclined',
   Cancelled = 'Cancelled',
   NeedsAttention = 'NeedsAttention',
@@ -30,13 +32,17 @@ const CHECKOUT_OUTCOMES: OrderStatus[] = [
   OrderStatus.NeedsAttention,
 ]
 
+const VOID_OUTCOMES: OrderStatus[] = [OrderStatus.Cancelled, OrderStatus.NeedsAttention]
+
 export const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  [OrderStatus.Initialized]:       CHECKOUT_START,
-  [OrderStatus.PaymentAuthorized]: CHECKOUT_OUTCOMES,
-  [OrderStatus.PaymentDeclined]:   CHECKOUT_START,
-  [OrderStatus.Cancelled]:         CHECKOUT_START,
-  [OrderStatus.NeedsAttention]:    [],
-  [OrderStatus.Complete]:          [],
+  [OrderStatus.Initialized]:           CHECKOUT_START,
+  [OrderStatus.PaymentAuthorized]:     [OrderStatus.CheckingInventory],
+  [OrderStatus.CheckingInventory]:     [...CHECKOUT_OUTCOMES, OrderStatus.InventoryNotAvailable],
+  [OrderStatus.InventoryNotAvailable]: VOID_OUTCOMES,
+  [OrderStatus.PaymentDeclined]:       CHECKOUT_START,
+  [OrderStatus.Cancelled]:             CHECKOUT_START,
+  [OrderStatus.NeedsAttention]:        [],
+  [OrderStatus.Complete]:              [],
 }
 
 export function canTransition(from: OrderStatus, to: OrderStatus): boolean {

@@ -25,7 +25,7 @@ The console exposes the full API as interactive forms and provides a live view o
 - **Create Order** — submits `POST /orders` and populates the order table below
 - **Checkout** — submits `POST /orders/:id/checkout`; the orderId field auto-fills when you click a row in the orders table
 - **Get Status** — submits `GET /orders/:id/status`
-- **Error Simulation** — toggles [`throwIfSimulated()`](src/simulation.ts#L17) for each error class, allowing any failure path to be triggered without modifying code: `PaymentDeclinedError` alone produces `PaymentDeclined`; `CompletionFailedError` alone produces `Cancelled`; both together produce `NeedsAttention`
+- **Error Simulation** — toggles [`throwIfSimulated()`](src/simulation.ts#L17) for each error class, allowing any failure path to be triggered without modifying code: `PaymentDeclinedError` alone produces `PaymentDeclined`; `InventoryNotAvailableError` alone produces `InventoryNotAvailable → Cancelled`; `CompletionFailedError` alone produces `Cancelled`; either of the latter two combined with `PaymentUnvoidableError` produces `NeedsAttention`
 - **Orders table** — live view of all orders in the in-memory DB, with current status
 - **Status History table** — append-only log of every status transition, with timestamps
 
@@ -33,10 +33,12 @@ The console exposes the full API as interactive forms and provides a live view o
 
 ## What I Built
 
-A REST API that enforces a sequential checkout flow — initialization, payment authorization, and completion — where each failure mode triggers a different recovery path:
+A REST API that enforces a sequential checkout flow — initialization, payment authorization, inventory validation, and completion — where each failure mode triggers a different recovery path:
 
 - **Payment declined** → reject the order. No cleanup needed.
-- **Completion fails after payment authorized** → void the payment, mark as `Cancelled`.
+- **Inventory unavailable after payment authorized** → log `InventoryNotAvailable`, void the payment, mark as `Cancelled`.
+- **Inventory unavailable and void also fails** → mark as `NeedsAttention` for manual resolution. Alert fires.
+- **Completion fails after inventory validated** → void the payment, mark as `Cancelled`.
 - **Completion fails and void also fails** → mark as `NeedsAttention` for manual resolution. Alert fires.
 
 ### State Machine
@@ -44,10 +46,12 @@ A REST API that enforces a sequential checkout flow — initialization, payment 
 | Status | Description |
 |---|---|
 | `Initialized` | Order created, awaiting checkout |
-| `PaymentAuthorized` | Payment authorized; completion in progress |
+| `PaymentAuthorized` | Payment authorized; inventory check in progress |
+| `CheckingInventory` | Verifying inventory is still available |
+| `InventoryNotAvailable` | Inventory check failed; void in progress |
 | `PaymentDeclined` | Authorization failed |
-| `Cancelled` | Completion failed; payment voided |
-| `NeedsAttention` | Completion failed and void also failed |
+| `Cancelled` | Recovery succeeded; payment voided |
+| `NeedsAttention` | Recovery failed; payment could not be voided |
 | `Complete` | Order successfully fulfilled |
 
 ```mermaid
@@ -57,9 +61,15 @@ stateDiagram-v2
     Initialized --> PaymentAuthorized : authorize succeeds
     Initialized --> PaymentDeclined : authorize fails
 
-    PaymentAuthorized --> Complete : completion succeeds
-    PaymentAuthorized --> Cancelled : completion fails, void succeeds
-    PaymentAuthorized --> NeedsAttention : completion fails, void fails
+    PaymentAuthorized --> CheckingInventory : always
+
+    CheckingInventory --> Complete : inventory ok, completion succeeds
+    CheckingInventory --> Cancelled : completion fails, void succeeds
+    CheckingInventory --> NeedsAttention : completion fails, void fails
+    CheckingInventory --> InventoryNotAvailable : inventory unavailable
+
+    InventoryNotAvailable --> Cancelled : void succeeds
+    InventoryNotAvailable --> NeedsAttention : void fails
 
     PaymentDeclined --> PaymentAuthorized : retry
     PaymentDeclined --> PaymentDeclined : retry, authorize fails again
@@ -85,29 +95,28 @@ assertCheckoutAllowed(currentStatus)  // early exit -- checkout not attempted
 
 try:
   payment.authorize()
-  assertTransition(currentStatus, PaymentAuthorized)
-  LogStatus(PaymentAuthorized)
-  currentStatus ← PaymentAuthorized
+  LogStatus(PaymentAuthorized);  currentStatus ← PaymentAuthorized
+  LogStatus(CheckingInventory);  currentStatus ← CheckingInventory
+  checkInventory()
   tryComplete()
 
 catch PaymentDeclined:
-  assertTransition(currentStatus, PaymentDeclined)
   LogStatus(PaymentDeclined)
   return PaymentDeclined
 
-catch CompletionFailed:
+catch InventoryNotAvailable | CompletionFailed:
+  if InventoryNotAvailable:
+    LogStatus(InventoryNotAvailable);  currentStatus ← InventoryNotAvailable
   try:
     payment.void()
-    assertTransition(currentStatus, Cancelled)  // currentStatus = PaymentAuthorized
-    LogStatus(Cancelled)
+    LogStatus(Cancelled)  // from CheckingInventory or InventoryNotAvailable
     return Cancelled
   catch:
-    assertTransition(currentStatus, NeedsAttention)  // currentStatus = PaymentAuthorized
     LogStatus(NeedsAttention)
+    fireAlert()
     return NeedsAttention
 
-assertTransition(currentStatus, Complete)  // currentStatus = PaymentAuthorized
-LogStatus(Complete)
+LogStatus(Complete)  // currentStatus = CheckingInventory
 return Complete
 ```
 
@@ -119,7 +128,7 @@ The full implementation is in [`Order.tryCheckout()`](src/models/Order.ts#L73). 
 - `clientId: string`
 - `ticketIds: string[]`
 
-Key methods: [`initialize()`](src/models/Order.ts#L38), [`tryCheckout(payment, paymentId)`](src/models/Order.ts#L73), [`getStatus()`](src/models/Order.ts#L43), [`getStatusHistory()`](src/models/Order.ts#L53)
+Key methods: [`initialize()`](src/models/Order.ts#L38), [`tryCheckout(payment, paymentId)`](src/models/Order.ts#L78), [`checkInventory()`](src/models/Order.ts#L68), [`tryComplete()`](src/models/Order.ts#L73), [`getStatus()`](src/models/Order.ts#L43), [`getStatusHistory()`](src/models/Order.ts#L53)
 
 #### [`PaymentMethod`](src/models/PaymentMethod.ts#L6)
 A stub interface with two methods: [`authorize()`](src/models/PaymentMethod.ts#L14) and [`void()`](src/models/PaymentMethod.ts#L19). Either can be configured to throw to simulate failure scenarios.
@@ -144,26 +153,28 @@ The `orders` table carries no `status` column. Current status is derived from `o
 
 ### Test Coverage
 
-64 tests across two files.
+81 tests across two files.
 
 [`tests/order.test.ts`](tests/order.test.ts) — unit tests against the `Order` model directly:
-- [`getStatus()`](tests/order.test.ts#L29) — verifies initial status before checkout
-- [`tryCheckout()` — method call behavior](tests/order.test.ts#L35) — verifies which collaborators (`authorize`, `tryComplete`, `void`) are called or skipped under each failure path
-- [`tryCheckout()` — outcome scenarios](tests/order.test.ts#L95) — the four required cases: happy path, payment decline, completion fail + void success, completion fail + void fail
-- [`statusHistory`](tests/order.test.ts#L131) — verifies full status sequences for each path, timestamp presence, and chronological ordering
+- [`getStatus()`](tests/order.test.ts#L30) — verifies initial status before checkout
+- [`tryCheckout()` — method call behavior](tests/order.test.ts#L36) — verifies which collaborators (`authorize`, `checkInventory`, `tryComplete`, `void`) are called or skipped under each failure path
+- [`tryCheckout()` — inventory failure gates tryComplete](tests/order.test.ts#L118) — confirms that a `checkInventory` failure short-circuits before `tryComplete` is ever called, even when `tryComplete` would also fail; verifies the correct outcome and that `InventoryNotAvailable` appears in history
+- [`tryCheckout()` — inventory failure scenarios](tests/order.test.ts#L127) — `InventoryNotAvailableError` alone produces `Cancelled`; combined with `PaymentUnvoidableError` produces `NeedsAttention`
+- [`tryCheckout()` — outcome scenarios](tests/order.test.ts#L147) — the four required cases: happy path, payment decline, completion fail + void success, completion fail + void fail
+- [`statusHistory`](tests/order.test.ts#L183) — verifies full status sequences for each path (including `CheckingInventory` and `InventoryNotAvailable`), timestamp presence, and chronological ordering
 
 [`tests/api.test.ts`](tests/api.test.ts) — integration tests against the HTTP API:
-- [`POST /orders`](tests/api.test.ts#L20) — valid creation and input validation (missing fields, wrong types)
-- [`POST /orders/:orderId/checkout`](tests/api.test.ts#L58) — all checkout outcomes, retry eligibility by status, invalid/missing paymentId, unknown order
-- [`GET /orders/:orderId/status`](tests/api.test.ts#L302) — status and history responses for each outcome path, timestamp ordering, unknown order
+- [`POST /orders`](tests/api.test.ts#L22) — valid creation and input validation (missing fields, wrong types)
+- [`POST /orders/:orderId/checkout`](tests/api.test.ts#L60) — all checkout outcomes including inventory failure paths, retry eligibility by status, invalid/missing paymentId, unknown order
+- [`GET /orders/:orderId/status`](tests/api.test.ts#L302) — status and history responses for each outcome path (including `InventoryNotAvailable` sequences), timestamp ordering, unknown order
 
 ---
 
 ## Assumptions
 
-#### Fulfillment is hand-waved
+#### Inventory check and fulfillment are hand-waved
 
-[`tryComplete()`](src/models/Order.ts#L63) is a stub — it represents transferring tickets to the buyer but does nothing. A robust system would require a dedicated fulfillment model and service handling inventory reservation, seat locking, and downstream confirmation. That service would still be orchestrated by `tryCheckout` as another participant in the checkout flow, keeping the coordination logic in one place.
+[`checkInventory()`](src/models/Order.ts#L68) and [`tryComplete()`](src/models/Order.ts#L73) are both stubs. `checkInventory` represents a call to a third-party inventory service to confirm the requested tickets are still available at checkout time — a real implementation would query that service and throw `InventoryNotAvailableError` on a negative response. `tryComplete` represents transferring tickets to the buyer. A robust system would back both with dedicated services handling inventory reservation, seat locking, and downstream confirmation. Both would still be orchestrated by `tryCheckout`, keeping the coordination logic in one place.
 
 #### `NeedsAttention` resolution is out of scope
 
@@ -222,7 +233,7 @@ Each row currently records only `order_id`, `status`, and `created_at`. Several 
 
 #### Extract simulation infrastructure from production code
 
-[`PaymentMethod`](src/models/PaymentMethod.ts#L6) and [`Order.tryComplete()`](src/models/Order.ts#L63) call [`throwIfSimulated()`](src/simulation.ts#L17) directly, which means error injection logic lives inside the production code path. The tests don't use this — they use Jest spies. The simulation system exists solely to power the browser-based demo UI. In a real service this would be extracted: either a separate injectable test double, or a middleware-level flag that never touches the core model code.
+[`PaymentMethod`](src/models/PaymentMethod.ts#L6), [`Order.checkInventory()`](src/models/Order.ts#L68), and [`Order.tryComplete()`](src/models/Order.ts#L73) all call [`throwIfSimulated()`](src/simulation.ts#L17) directly, which means error injection logic lives inside the production code path. The tests don't use this — they use Jest spies. The simulation system exists solely to power the browser-based demo UI. In a real service this would be extracted: either a separate injectable test double, or a middleware-level flag that never touches the core model code.
 
 #### Status transition messages
 

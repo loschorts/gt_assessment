@@ -39,3 +39,10 @@ export class OrderNotInitializedError extends Error {
     this.name = 'OrderNotInitializedError'
   }
 }
+
+export class InventoryNotAvailableError extends Error {
+  constructor(message = 'Inventory not available') {
+    super(message)
+    this.name = 'InventoryNotAvailableError'
+  }
+}

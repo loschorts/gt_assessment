@@ -2,7 +2,7 @@ import { clearAll } from '../src/db'
 import Order from '../src/models/Order'
 import PaymentMethod from '../src/models/PaymentMethod'
 import OrderStatus from '../src/models/OrderStatus'
-import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError, CheckoutNotAllowedError } from '../src/errors'
+import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError, CheckoutNotAllowedError, InventoryNotAvailableError } from '../src/errors'
 import * as alerts from '../src/alerts'
 
 describe('Order', () => {
@@ -10,6 +10,7 @@ describe('Order', () => {
   let payment: PaymentMethod
   let authorizeSpy: jest.SpyInstance
   let voidSpy: jest.SpyInstance
+  let inventorySpy: jest.SpyInstance
   let completeSpy: jest.SpyInstance
   let alertSpy: jest.SpyInstance
 
@@ -20,6 +21,7 @@ describe('Order', () => {
     payment = new PaymentMethod('client-1')
     authorizeSpy = jest.spyOn(payment, 'authorize').mockResolvedValue()
     voidSpy = jest.spyOn(payment, 'void').mockResolvedValue()
+    inventorySpy = jest.spyOn(order, 'checkInventory').mockResolvedValue()
     completeSpy = jest.spyOn(order, 'tryComplete').mockResolvedValue()
     alertSpy = jest.spyOn(alerts, 'fireAlert').mockImplementation(() => {})
   })
@@ -90,6 +92,83 @@ describe('Order', () => {
       await order.tryCheckout(payment, 'pay-test')
       expect(alertSpy).not.toHaveBeenCalled()
     })
+
+    test('calls checkInventory after authorize succeeds', async () => {
+      await order.tryCheckout(payment, 'pay-test')
+      expect(inventorySpy).toHaveBeenCalledTimes(1)
+    })
+
+    test('does not call checkInventory when authorize fails', async () => {
+      authorizeSpy.mockRejectedValue(new PaymentDeclinedError())
+      await order.tryCheckout(payment, 'pay-test')
+      expect(inventorySpy).not.toHaveBeenCalled()
+    })
+
+    test('does not call tryComplete when checkInventory fails', async () => {
+      inventorySpy.mockRejectedValue(new InventoryNotAvailableError())
+      await order.tryCheckout(payment, 'pay-test')
+      expect(completeSpy).not.toHaveBeenCalled()
+    })
+
+    test('calls void when checkInventory fails', async () => {
+      inventorySpy.mockRejectedValue(new InventoryNotAvailableError())
+      await order.tryCheckout(payment, 'pay-test')
+      expect(voidSpy).toHaveBeenCalledTimes(1)
+    })
+
+    test('fires alert when checkInventory fails and void also fails → NeedsAttention', async () => {
+      inventorySpy.mockRejectedValue(new InventoryNotAvailableError())
+      voidSpy.mockRejectedValue(new PaymentUnvoidableError())
+      await order.tryCheckout(payment, 'pay-test')
+      expect(alertSpy).toHaveBeenCalledTimes(1)
+      expect(alertSpy).toHaveBeenCalledWith(order.id)
+    })
+  })
+
+  describe('tryCheckout() — inventory failure scenarios', () => {
+    test('checkInventory fails, void succeeds → Cancelled', async () => {
+      inventorySpy.mockRejectedValue(new InventoryNotAvailableError())
+      const status = await order.tryCheckout(payment, 'pay-test')
+      expect(status).toBe(OrderStatus.Cancelled)
+      expect(await order.getStatus()).toBe(OrderStatus.Cancelled)
+    })
+
+    test('checkInventory fails, void also fails → NeedsAttention', async () => {
+      inventorySpy.mockRejectedValue(new InventoryNotAvailableError())
+      voidSpy.mockRejectedValue(new PaymentUnvoidableError())
+      const status = await order.tryCheckout(payment, 'pay-test')
+      expect(status).toBe(OrderStatus.NeedsAttention)
+      expect(await order.getStatus()).toBe(OrderStatus.NeedsAttention)
+    })
+  })
+
+  describe('tryCheckout() — inventory failure gates tryComplete', () => {
+    beforeEach(() => {
+      inventorySpy.mockRejectedValue(new InventoryNotAvailableError())
+      completeSpy.mockRejectedValue(new CompletionFailedError())
+    })
+
+    test('tryComplete is never called even if it would also fail', async () => {
+      await order.tryCheckout(payment, 'pay-test')
+      expect(completeSpy).not.toHaveBeenCalled()
+    })
+
+    test('returns Cancelled (not a completion error) when void succeeds', async () => {
+      const status = await order.tryCheckout(payment, 'pay-test')
+      expect(status).toBe(OrderStatus.Cancelled)
+    })
+
+    test('returns NeedsAttention (not a completion error) when void also fails', async () => {
+      voidSpy.mockRejectedValue(new PaymentUnvoidableError())
+      const status = await order.tryCheckout(payment, 'pay-test')
+      expect(status).toBe(OrderStatus.NeedsAttention)
+    })
+
+    test('history includes InventoryNotAvailable, proving inventory path was taken', async () => {
+      await order.tryCheckout(payment, 'pay-test')
+      const statuses = (await order.getStatusHistory()).map(e => e.status)
+      expect(statuses).toContain(OrderStatus.InventoryNotAvailable)
+    })
   })
 
   describe('tryCheckout() — README validation test cases', () => {
@@ -153,10 +232,10 @@ describe('Order', () => {
       expect(statuses.at(-1)).toBe(OrderStatus.Cancelled)
     })
 
-    test('full sequence on success: Initialized → PaymentAuthorized → Complete', async () => {
+    test('full sequence on success: Initialized → PaymentAuthorized → CheckingInventory → Complete', async () => {
       await order.tryCheckout(payment, 'pay-test')
       const statuses = (await order.getStatusHistory()).map(e => e.status)
-      expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.Complete])
+      expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.CheckingInventory, OrderStatus.Complete])
     })
 
     test('full sequence on payment declined: Initialized → PaymentDeclined', async () => {
@@ -166,19 +245,34 @@ describe('Order', () => {
       expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.PaymentDeclined])
     })
 
-    test('full sequence on Cancelled: Initialized → PaymentAuthorized → Cancelled', async () => {
+    test('full sequence on Cancelled (completion fails): Initialized → PaymentAuthorized → CheckingInventory → Cancelled', async () => {
       completeSpy.mockRejectedValue(new CompletionFailedError())
       await order.tryCheckout(payment, 'pay-test')
       const statuses = (await order.getStatusHistory()).map(e => e.status)
-      expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.Cancelled])
+      expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.CheckingInventory, OrderStatus.Cancelled])
     })
 
-    test('full sequence on NeedsAttention: Initialized → PaymentAuthorized → NeedsAttention', async () => {
+    test('full sequence on NeedsAttention (completion fails): Initialized → PaymentAuthorized → CheckingInventory → NeedsAttention', async () => {
       completeSpy.mockRejectedValue(new CompletionFailedError())
       voidSpy.mockRejectedValue(new PaymentUnvoidableError())
       await order.tryCheckout(payment, 'pay-test')
       const statuses = (await order.getStatusHistory()).map(e => e.status)
-      expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.NeedsAttention])
+      expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.CheckingInventory, OrderStatus.NeedsAttention])
+    })
+
+    test('full sequence on Cancelled (inventory fails): Initialized → PaymentAuthorized → CheckingInventory → InventoryNotAvailable → Cancelled', async () => {
+      inventorySpy.mockRejectedValue(new InventoryNotAvailableError())
+      await order.tryCheckout(payment, 'pay-test')
+      const statuses = (await order.getStatusHistory()).map(e => e.status)
+      expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.CheckingInventory, OrderStatus.InventoryNotAvailable, OrderStatus.Cancelled])
+    })
+
+    test('full sequence on NeedsAttention (inventory fails): Initialized → PaymentAuthorized → CheckingInventory → InventoryNotAvailable → NeedsAttention', async () => {
+      inventorySpy.mockRejectedValue(new InventoryNotAvailableError())
+      voidSpy.mockRejectedValue(new PaymentUnvoidableError())
+      await order.tryCheckout(payment, 'pay-test')
+      const statuses = (await order.getStatusHistory()).map(e => e.status)
+      expect(statuses).toEqual([OrderStatus.Initialized, OrderStatus.PaymentAuthorized, OrderStatus.CheckingInventory, OrderStatus.InventoryNotAvailable, OrderStatus.NeedsAttention])
     })
 
     test('each history entry has a createdAt timestamp', async () => {

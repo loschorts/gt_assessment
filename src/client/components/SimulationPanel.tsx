@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 
 const SIMULATABLE_ERRORS = [
-  { name: 'PaymentDeclinedError',   desc: 'authorize() throws → PaymentDeclined' },
-  { name: 'CompletionFailedError',  desc: 'tryComplete() throws → Cancelled (or NeedsAttention if combined below)' },
-  { name: 'PaymentUnvoidableError', desc: 'void() throws → NeedsAttention (combine with CompletionFailedError)' },
+  { name: 'PaymentDeclinedError',      desc: 'authorize() throws → PaymentDeclined' },
+  { name: 'InventoryNotAvailableError', desc: 'checkInventory() throws → InventoryNotAvailable → Cancelled (or NeedsAttention if combined below)' },
+  { name: 'CompletionFailedError',     desc: 'tryComplete() throws → Cancelled (or NeedsAttention if combined below)' },
+  { name: 'PaymentUnvoidableError',    desc: 'void() throws → NeedsAttention (combine with InventoryNotAvailableError or CompletionFailedError)' },
 ]
 
 export default function SimulationPanel() {

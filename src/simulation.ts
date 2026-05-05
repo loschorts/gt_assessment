@@ -1,7 +1,7 @@
 // Error injection for the browser demo UI only. Not used by tests — tests use Jest spies.
-import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError } from './errors'
+import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError, InventoryNotAvailableError } from './errors'
 
-export type SimulatableError = typeof PaymentDeclinedError | typeof CompletionFailedError | typeof PaymentUnvoidableError
+export type SimulatableError = typeof PaymentDeclinedError | typeof CompletionFailedError | typeof PaymentUnvoidableError | typeof InventoryNotAvailableError
 
 const active = new Set<string>()
 

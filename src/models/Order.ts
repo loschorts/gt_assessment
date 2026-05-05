@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import OrderStatus, { assertTransition, assertCheckoutAllowed } from './OrderStatus'
 import PaymentMethod from './PaymentMethod'
-import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError, OrderNotInitializedError } from '../errors'
+import { PaymentDeclinedError, CompletionFailedError, PaymentUnvoidableError, OrderNotInitializedError, InventoryNotAvailableError } from '../errors'
 import { getDb } from '../database'
 // Circular import with db.ts is intentional and safe: both modules only reference
 // each other inside function bodies, so CommonJS resolves both before any function runs.
@@ -59,6 +59,11 @@ class Order {
     return rows.map(r => ({ status: r.status as OrderStatus, createdAt: new Date(r.created_at) }))
   }
 
+  // public to allow jest.spyOn in tests; injecting an inventory dependency would eliminate this
+  async checkInventory(): Promise<void> {
+    throwIfSimulated(InventoryNotAvailableError)
+  }
+
   // public to allow jest.spyOn in tests; injecting a fulfillment dependency would eliminate this
   async tryComplete(): Promise<void> {
     throwIfSimulated(CompletionFailedError)
@@ -80,12 +85,17 @@ class Order {
     try {
       await payment.authorize()
       currentStatus = await this.transition(currentStatus, OrderStatus.PaymentAuthorized)
+      currentStatus = await this.transition(currentStatus, OrderStatus.CheckingInventory)
+      await this.checkInventory()
       await this.tryComplete()
     } catch (e) {
       if (e instanceof PaymentDeclinedError) {
         return this.transition(currentStatus, OrderStatus.PaymentDeclined)
       }
-      if (e instanceof CompletionFailedError) {
+      if (e instanceof InventoryNotAvailableError || e instanceof CompletionFailedError) {
+        if (e instanceof InventoryNotAvailableError) {
+          currentStatus = await this.transition(currentStatus, OrderStatus.InventoryNotAvailable)
+        }
         try {
           await payment.void()
           return this.transition(currentStatus, OrderStatus.Cancelled)
